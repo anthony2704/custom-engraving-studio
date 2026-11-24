@@ -3,18 +3,19 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Đã gửi yêu cầu thiết kế</title>
+  <title>Đã tiếp nhận yêu cầu thiết kế</title>
   <style>
-    body{margin:0;padding:24px;font:16px/1.5 Arial,sans-serif;color:#24313b;background:#fff}
+    *{box-sizing:border-box}body{min-height:100vh;margin:0;padding:24px;display:grid;place-items:center;background:#f5f6f7;color:#1e2934;font:15px/1.6 Arial,sans-serif}.card{width:min(100%,520px);padding:36px;border:1px solid #e5e8eb;border-radius:18px;background:#fff;box-shadow:0 18px 54px rgba(29,39,49,.08)}.eyebrow{margin:0 0 8px;color:#9aa4ad;font-size:11px;font-weight:700;letter-spacing:1.5px}.mark{width:42px;height:42px;margin-bottom:20px;display:grid;place-items:center;border-radius:50%;background:#eaf4ee;color:#56896a;font-size:22px}h1{margin:0 0 10px;font-size:25px;line-height:1.25}.note{margin:22px 0;padding:13px 15px;border-radius:9px;background:#f5f8f6;color:#70827a;font-size:13px}.back{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:0 18px;border-radius:8px;background:#bf3733;color:#fff;text-decoration:none;font-weight:700}.back:hover{background:#9e2926}@media(max-width:520px){.card{padding:26px}}
   </style>
 </head>
 <body>
-  <p>Đã gửi yêu cầu thiết kế.</p>
-  <script>
-    const request = new URLSearchParams(window.location.search).get('request');
-    if (request && window.parent !== window) {
-      window.parent.postMessage({ type: 'classic-design-submitted', request }, window.location.origin);
-    }
-  </script>
+  <main class="card">
+    <div class="mark" aria-hidden="true">✓</div>
+    <p class="eyebrow">HOÀN TẤT THIẾT KẾ</p>
+    <h1>Yêu cầu của bạn đã được tiếp nhận</h1>
+    <p>Yêu cầu thiết kế Classic đã được chuyển đi. Cửa hàng sẽ xem lại và liên hệ với bạn.</p>
+    <p class="note">Nếu chưa thấy email phản hồi, hãy kiểm tra cả mục Spam.</p>
+    <a class="back" href="./">Quay lại thiết kế</a>
+  </main>
 </body>
 </html>
