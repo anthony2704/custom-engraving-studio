@@ -234,7 +234,9 @@
   function drawTextLine(context, item, line, centerX, y, maxWidth, mode) {
     const spacing = Number(item.letterSpacing || 0) + (item.effect === 'spacing' ? 5 : 0);
     if (spacing <= 0) {
+      context.save(); context.textAlign = item.align || 'center';
       context[mode](line, centerX, y, maxWidth);
+      context.restore();
       return;
     }
     const characters = [...line];
