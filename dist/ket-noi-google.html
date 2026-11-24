@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="robots" content="noindex,nofollow" />
+  <title>Kết nối Google — Khắc riêng Classic</title>
+  <style>
+    *{box-sizing:border-box}body{margin:0;background:#f5f6f7;color:#24313b;font:16px/1.65 system-ui,sans-serif}main{max-width:840px;margin:40px auto;padding:32px;background:white;border:1px solid #e5e8eb;border-radius:16px}h1{font-size:29px;line-height:1.25}h2{font-size:20px;margin-top:28px}a{color:#9e2926}code{padding:2px 5px;background:#f1f3f5;border-radius:4px;overflow-wrap:anywhere}li{margin-bottom:10px}.note{padding:14px 18px;border-radius:8px;background:#f5f8f6}table{border-collapse:collapse;width:100%;margin:15px 0}td,th{padding:12px;border:1px solid #e5e8eb;text-align:left;vertical-align:top}button{padding:10px 16px;background:#bf3733;color:white;border:0;border-radius:7px;font:inherit;cursor:pointer}.status{color:#697984;font-size:14px}@media(max-width:640px){main{margin:12px;padding:22px}table{font-size:14px}}
+  </style>
+</head>
+<body>
+<main>
+  <p>KHẮC RIÊNG · CLASSIC</p>
+  <h1>Kết nối nhận thiết kế qua Google</h1>
+  <p>Dành cho chủ cửa hàng. Mỗi yêu cầu được lưu riêng hai ảnh PNG và thông tin khách vào Drive, rồi gửi email tới <strong>khoa.v.nguyen.work@gmail.com</strong>. Ảnh trong Drive để riêng tư trong tài khoản chạy script.</p>
+  <p class="note">Email được gửi ngay trong lần xử lý yêu cầu, không đi qua FormSubmit. Google không bảo đảm thời gian thư tới hộp thư. Gmail cá nhân có hạn mức Apps Script 100 người nhận/ngày; khi hết hạn mức, đơn vẫn được lưu và email chờ gửi lại.</p>
+
+  <h2>1. Tạo script</h2>
+  <ol>
+    <li>Mở <a href="https://script.google.com/home/start" target="_blank" rel="noopener">Google Apps Script</a> và đăng nhập tài khoản Google bạn muốn dùng để lưu Drive và gửi thư.</li>
+    <li>Chọn <strong>New project / Dự án mới</strong>, đặt tên <strong>Khắc riêng Classic — Nhận thiết kế</strong>.</li>
+    <li>Mở <a href="./google-apps-script-code.txt" target="_blank" rel="noopener">toàn bộ mã Apps Script</a>, sao chép tất cả và dán thay nội dung mặc định trong <strong>Code.gs</strong>. Lưu dự án.</li>
+    <li>Trong danh sách hàm cạnh nút Run, chọn <strong>setup</strong> rồi bấm <strong>Run / Chạy</strong>. Cấp quyền Drive, gửi email và tạo lịch gửi lại. Nếu Google báo ứng dụng chưa xác minh, chọn <strong>Advanced / Nâng cao</strong> rồi tiếp tục vào đúng dự án bạn vừa tự tạo.</li>
+  </ol>
+  <p>Hàm setup tạo thư mục Drive, mã kết nối và lịch gửi lại email bị lỗi. Hàm này không gửi email thử. Trong <strong>Execution log</strong> có đường dẫn thư mục để bạn xem đơn.</p>
+
+  <h2>2. Xuất bản Web app</h2>
+  <ol>
+    <li>Chọn <strong>Deploy / Triển khai → New deployment / Triển khai mới</strong>.</li>
+    <li>Chọn loại <strong>Web app / Ứng dụng web</strong>.</li>
+    <li><strong>Execute as / Thực thi dưới danh nghĩa:</strong> chọn <strong>Me / Tôi</strong>.</li>
+    <li><strong>Who has access / Ai có quyền truy cập:</strong> chọn <strong>Anyone / Bất kỳ ai</strong>, kể cả người chưa đăng nhập Google.</li>
+    <li>Bấm Deploy, sao chép <strong>Web app URL</strong> kết thúc bằng <code>/exec</code>.</li>
+  </ol>
+
+  <h2>3. Kết nối với Cloudflare Pages</h2>
+  <p>Vào <a href="https://dash.cloudflare.com/" target="_blank" rel="noopener">Cloudflare</a> → <strong>Workers &amp; Pages → khac-rieng-classic → Settings → Variables and Secrets</strong>. Chọn môi trường <strong>Production</strong> và thêm hai giá trị:</p>
+  <table>
+    <thead><tr><th>Tên</th><th>Giá trị</th></tr></thead>
+    <tbody>
+      <tr><td><code>GOOGLE_APPS_SCRIPT_URL</code></td><td>Web app URL vừa sao chép, kết thúc bằng <code>/exec</code>.</td></tr>
+      <tr><td><code>DESIGN_INTAKE_SECRET</code><br />Chọn loại <strong>Secret / Encrypt</strong></td><td>Trong Apps Script mở <strong>Project Settings / Cài đặt dự án → Script Properties</strong>, sao chép giá trị cùng tên <code>DESIGN_INTAKE_SECRET</code>.</td></tr>
+    </tbody>
+  </table>
+  <p>Mã kết nối chỉ dán vào Cloudflare Secret. Không dán vào mã nguồn trang web, GitHub hoặc nội dung chat.</p>
+
+  <h2>4. Triển khai lại và kiểm tra</h2>
+  <ol>
+    <li>Lưu hai giá trị rồi mở <a href="https://github.com/anthony2704/custom-engraving-studio/actions/workflows/pages-deployment.yml" target="_blank" rel="noopener">workflow triển khai GitHub</a>, chọn <strong>Run workflow → main → Run workflow</strong>. Hoặc báo lại đã cấu hình để mình chạy bước triển khai.</li>
+    <li>Đợi workflow màu xanh, bấm <strong>Kiểm tra kết nối</strong> dưới đây. Khi báo đã cấu hình Google, tải lại trang thiết kế rồi gửi một mẫu mới.</li>
+    <li>Kiểm tra mã yêu cầu trên web, thư mục Drive và email có hai tệp <code>thiet-ke-mat-truoc.png</code>, <code>thiet-ke-mat-sau.png</code>. Việc cấu hình chưa thay thế bước gửi mẫu thực tế.</li>
+  </ol>
+  <button type="button" id="checkConnection">Kiểm tra kết nối</button>
+  <p id="connectionStatus" class="status" role="status">Chưa kiểm tra.</p>
+  <p class="status">Trước khi cấu hình Google, web tiếp tục dùng FormSubmit. Sau khi cấu hình và deploy, các yêu cầu mới tự động đi qua Google. Nếu phản hồi Google bị lỗi, web giữ mã yêu cầu để lần gửi lại không tạo đơn trùng.</p>
+  <p><a href="./">Quay lại trang thiết kế</a></p>
+  <p class="status">Tài liệu: <a href="https://developers.google.com/apps-script/guides/web">Google Web apps</a>, <a href="https://developers.google.com/apps-script/guides/services/quotas">hạn mức Google</a>, <a href="https://developers.cloudflare.com/pages/functions/bindings/#secrets">Cloudflare Secrets</a>.</p>
+</main>
+<script>
+  document.querySelector('#checkConnection').addEventListener('click', async () => {
+    const status = document.querySelector('#connectionStatus');
+    status.textContent = 'Đang kiểm tra…';
+    try {
+      const response = await fetch('./api/design-requests', { cache: 'no-store' });
+      const data = await response.json();
+      if (!response.ok || typeof data.configured !== 'boolean') throw new Error();
+      status.textContent = data.configured
+        ? 'Đã cấu hình Google trên Cloudflare. Hãy gửi một mẫu để xác nhận lưu Drive và gửi email thực tế.'
+        : 'Cloudflare chưa có đủ hai giá trị cấu hình, hoặc chưa được deploy lại.';
+    } catch (_) { status.textContent = 'Không đọc được cấu hình. Hãy kiểm tra workflow đã triển khai thành công.'; }
+  });
+</script>
+</body>
+</html>

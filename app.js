@@ -759,8 +759,10 @@
     event.preventDefault();
     const form = event.currentTarget; if (!form.reportValidity()) return;
     const button = document.querySelector('#submitFormButton'); const feedback = document.querySelector('#formFeedback');
+    if (button.disabled) return;
     button.disabled = true; button.textContent = 'Đang gửi…'; feedback.classList.remove('is-success');
     try {
+      const destination = await window.DesignIntake.resolveEndpoint(window.CUSTOMIZER_CONFIG || {});
       const formData = new FormData(form);
       const [frontDesign, backDesign] = await Promise.all([exportFace('front'), exportFace('back')]);
       const payload = {
@@ -768,12 +770,16 @@
         note:String(formData.get('note') || '').trim(), product:'Classic',
         designs:{ front:frontDesign.dataUrl, back:backDesign.dataUrl }
       };
-      if (!SUBMISSION_ENDPOINT) {
+      if (!destination.endpoint) {
         feedback.textContent = 'Email/Drive nhận đơn chưa được kết nối. Thiết kế chưa được gửi; hãy dùng “Tải ảnh PNG” để lưu bản thiết kế.';
         feedback.classList.remove('is-success');
         return;
       }
-      if (/^https:\/\/formsubmit\.co\//i.test(SUBMISSION_ENDPOINT)) {
+      let receivedRequestId = '';
+      if (destination.google) {
+        const result = await window.DesignIntake.sendGoogle(destination.endpoint, payload);
+        receivedRequestId = result.requestId;
+      } else if (/^https:\/\/formsubmit\.co\//i.test(destination.endpoint)) {
         if (!frontDesign.blob || !backDesign.blob) throw new Error('Could not export design images');
         const combinedDesign = await combineDesignBlobs(frontDesign.blob, backDesign.blob);
         if (combinedDesign.size > 10 * 1024 * 1024) throw new Error('Design images exceed the 10 MB attachment limit');
@@ -781,17 +787,21 @@
         submitFormSubmitRequest(form, payload, combinedDesign);
         return;
       } else {
-        const response = await fetch(SUBMISSION_ENDPOINT, { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify(payload) });
+        const response = await fetch(destination.endpoint, { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify(payload) });
         const responseData = await response.json().catch(() => null);
-        if (!response.ok || responseData?.success === false || responseData?.success === 'false') throw new Error(`Submission failed (${response.status})`);
+        if (!response.ok || responseData?.success !== true) throw new Error(`Submission failed (${response.status})`);
       }
-      feedback.textContent = 'Yêu cầu đã được gửi thành công.';
+      feedback.textContent = receivedRequestId
+        ? `Đã nhận thiết kế của bạn. Mã yêu cầu: ${receivedRequestId}. Cửa hàng sẽ liên hệ lại với bạn.`
+        : 'Yêu cầu đã được gửi thành công.';
       feedback.classList.add('is-success'); document.querySelector('#manualExport').hidden = true;
       form.reset(); showToast('Đã gửi thiết kế thành công.');
     } catch (error) {
-      feedback.textContent = error.message.includes('10 MB')
-        ? 'Ảnh thiết kế vượt giới hạn đính kèm 10 MB. Vui lòng chỉnh sửa rồi thử gửi lại.'
-        : 'Không thể chuẩn bị yêu cầu gửi. Thông tin vẫn được giữ lại; vui lòng thử lại hoặc tải ZIP hai mặt để gửi thủ công.';
+      feedback.textContent = error.message.includes('10 MB') || error.message === 'TOO_LARGE'
+        ? 'Ảnh thiết kế quá lớn. Vui lòng giảm ảnh tải lên rồi gửi lại, hoặc tải ZIP hai mặt về.'
+        : error.requestId
+          ? `Chưa xác nhận được đơn đã lưu. Bạn có thể bấm gửi lại; mã ${error.requestId} được giữ để tránh tạo đơn trùng. Bạn cũng có thể tải ZIP hai mặt về.`
+          : 'Chưa kết nối được cổng nhận thiết kế. Thông tin vẫn được giữ lại; vui lòng thử lại hoặc tải ZIP hai mặt về.';
       document.querySelector('#manualExport').hidden = false;
       console.error('Design submission failed', error);
     } finally {
