@@ -610,8 +610,8 @@
       const nextUrl = new URL('/submit-complete.html', window.location.origin);
       nextUrl.searchParams.set('request', requestId);
       addField('_next', nextUrl.href);
-      addFile('front_design', frontBlob, 'thiet-ke-mat-truoc.png');
-      addFile('back_design', backBlob, 'thiet-ke-mat-sau.png');
+      addFile('attachment', frontBlob, 'thiet-ke-mat-truoc.png');
+      addFile('attachment', backBlob, 'thiet-ke-mat-sau.png');
 
       let timeoutId;
       const finish = (error) => {
