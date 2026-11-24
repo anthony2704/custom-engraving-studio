@@ -1,8 +1,8 @@
 (() => {
   'use strict';
 
-  // Configure a same-origin or CORS-enabled endpoint when email/Drive delivery is connected.
-  // Expected POST JSON: { name, contact, note, product, designs: { front: dataURL, back: dataURL } }.
+  // Configure FormSubmit for native multipart uploads or a CORS-enabled JSON endpoint.
+  // JSON endpoints receive { name, contact, note, product, designs: { front, back } }.
   const SUBMISSION_ENDPOINT = window.CUSTOMIZER_CONFIG?.submissionEndpoint || '';
   const W = 900;
   const H = 1350;
@@ -579,6 +579,57 @@
     const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = name;
     document.body.appendChild(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 3000);
   }
+  function submitFormSubmitRequest(payload, frontBlob, backBlob) {
+    return new Promise((resolve, reject) => {
+      const requestId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const targetName = `design-submit-${requestId.replace(/[^a-z0-9]/gi, '')}`;
+      const frame = document.createElement('iframe');
+      frame.name = targetName; frame.hidden = true; frame.title = 'Gửi yêu cầu thiết kế'; frame.tabIndex = -1;
+      const emailForm = document.createElement('form');
+      emailForm.action = SUBMISSION_ENDPOINT; emailForm.method = 'POST'; emailForm.enctype = 'multipart/form-data';
+      emailForm.target = targetName; emailForm.hidden = true;
+
+      const addField = (name, value) => {
+        const input = document.createElement('input'); input.type = 'hidden'; input.name = name; input.value = value;
+        emailForm.append(input);
+      };
+      const addFile = (name, blob, filename) => {
+        if (!blob || typeof DataTransfer === 'undefined') throw new Error('This browser cannot attach the exported PNG images.');
+        const input = document.createElement('input'); input.type = 'file'; input.name = name; input.hidden = true;
+        const transfer = new DataTransfer(); transfer.items.add(new File([blob], filename, { type: 'image/png' }));
+        input.files = transfer.files; emailForm.append(input);
+      };
+
+      addField('name', payload.name);
+      addField('contact', payload.contact);
+      addField('product', payload.product);
+      addField('note', payload.note || 'Không có lời nhắn');
+      addField('_subject', `Yêu cầu thiết kế Classic - ${payload.name}`);
+      addField('_template', 'table');
+      addField('_url', window.location.href);
+      const nextUrl = new URL('/submit-complete.html', window.location.origin);
+      nextUrl.searchParams.set('request', requestId);
+      addField('_next', nextUrl.href);
+      addFile('front_design', frontBlob, 'thiet-ke-mat-truoc.png');
+      addFile('back_design', backBlob, 'thiet-ke-mat-sau.png');
+
+      let timeoutId;
+      const finish = (error) => {
+        window.removeEventListener('message', onMessage);
+        clearTimeout(timeoutId);
+        emailForm.remove(); frame.remove();
+        error ? reject(error) : resolve();
+      };
+      const onMessage = (event) => {
+        if (event.origin !== window.location.origin || event.source !== frame.contentWindow) return;
+        if (event.data?.type === 'classic-design-submitted' && event.data.request === requestId) finish();
+      };
+      window.addEventListener('message', onMessage);
+      document.body.append(frame, emailForm);
+      timeoutId = setTimeout(() => finish(new Error('FormSubmit did not confirm the submission redirect.')), 45000);
+      emailForm.submit();
+    });
+  }
   async function openPreview() {
     const modal = document.querySelector('#previewModal'); const area = document.querySelector('#previewExports');
     area.innerHTML = '<p class="panel-description">Đang tạo ảnh xem trước…</p>'; modal.hidden = false;
@@ -633,32 +684,23 @@
         feedback.classList.remove('is-success');
         return;
       }
-      let response;
-      if (/^https:\/\/formsubmit\.co\/ajax\//i.test(SUBMISSION_ENDPOINT)) {
+      if (/^https:\/\/formsubmit\.co\//i.test(SUBMISSION_ENDPOINT)) {
         if (!frontDesign.blob || !backDesign.blob) throw new Error('Could not export design images');
         if (frontDesign.blob.size + backDesign.blob.size > 10 * 1024 * 1024) throw new Error('Design images exceed the 10 MB attachment limit');
-        const emailForm = new FormData();
-        emailForm.append('name', payload.name);
-        emailForm.append('contact', payload.contact);
-        emailForm.append('product', payload.product);
-        emailForm.append('note', payload.note || 'Không có lời nhắn');
-        emailForm.append('_subject', `Yêu cầu thiết kế Classic - ${payload.name}`);
-        emailForm.append('_template', 'table');
-        emailForm.append('_url', window.location.href);
-        emailForm.append('attachment', frontDesign.blob, 'thiet-ke-mat-truoc.png');
-        emailForm.append('attachment', backDesign.blob, 'thiet-ke-mat-sau.png');
-        response = await fetch(SUBMISSION_ENDPOINT, { method:'POST', headers:{ 'Accept':'application/json' }, body:emailForm });
+        await submitFormSubmitRequest(payload, frontDesign.blob, backDesign.blob);
       } else {
-        response = await fetch(SUBMISSION_ENDPOINT, { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify(payload) });
+        const response = await fetch(SUBMISSION_ENDPOINT, { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify(payload) });
+        const responseData = await response.json().catch(() => null);
+        if (!response.ok || responseData?.success === false || responseData?.success === 'false') throw new Error(`Submission failed (${response.status})`);
       }
-      const responseData = await response.json().catch(() => null);
-      if (!response.ok || responseData?.success === false || responseData?.success === 'false') throw new Error(`Submission failed (${response.status})`);
       feedback.textContent = 'Đã gửi thiết kế thành công. Cửa hàng sẽ liên hệ lại với bạn.';
-      feedback.classList.add('is-success'); form.reset(); showToast('Đã gửi thiết kế thành công.');
+      feedback.classList.add('is-success'); document.querySelector('#manualExport').hidden = true;
+      form.reset(); showToast('Đã gửi thiết kế thành công.');
     } catch (error) {
       feedback.textContent = error.message.includes('10 MB')
         ? 'Ảnh thiết kế vượt giới hạn đính kèm 10 MB. Vui lòng chỉnh sửa rồi thử gửi lại.'
-        : 'Chưa gửi được thiết kế. Vui lòng thử lại sau hoặc tải ảnh PNG để lưu bản thiết kế.';
+        : 'Chưa nhận được xác nhận gửi. Nếu đây là lần đầu, chủ cửa hàng cần xác minh email FormSubmit. Bạn có thể tải PNG hai mặt để gửi thủ công.';
+      document.querySelector('#manualExport').hidden = false;
       console.error('Design submission failed', error);
     } finally {
       button.disabled = false; button.textContent = 'Gửi yêu cầu thiết kế';

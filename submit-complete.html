@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Đã gửi yêu cầu thiết kế</title>
+  <style>
+    body{margin:0;padding:24px;font:16px/1.5 Arial,sans-serif;color:#24313b;background:#fff}
+  </style>
+</head>
+<body>
+  <p>Đã gửi yêu cầu thiết kế.</p>
+  <script>
+    const request = new URLSearchParams(window.location.search).get('request');
+    if (request && window.parent !== window) {
+      window.parent.postMessage({ type: 'classic-design-submitted', request }, window.location.origin);
+    }
+  </script>
+</body>
+</html>
