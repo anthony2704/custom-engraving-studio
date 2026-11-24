@@ -1,0 +1,497 @@
+(() => {
+  'use strict';
+
+  // Configure a same-origin or CORS-enabled endpoint when email/Drive delivery is connected.
+  // Expected POST JSON: { name, contact, note, product, designs: { front: dataURL, back: dataURL } }.
+  const SUBMISSION_ENDPOINT = window.CUSTOMIZER_CONFIG?.submissionEndpoint || '';
+  const W = 900;
+  const H = 1460;
+  const SAFE = { x: 184, y: 157, w: 532, h: 1147 };
+  const FINISHES = {
+    navy: { label: 'Navy matte', left: '#07121d', mid: '#153c61', right: '#08213c', edge: '#03080d' },
+    black: { label: 'Đen matte', left: '#101418', mid: '#303a41', right: '#151c22', edge: '#050709' },
+    silver: { label: 'Bạc xước', left: '#636c72', mid: '#d1d5d6', right: '#777f83', edge: '#343b40' }
+  };
+  const PALETTE = ['#e8e2d7', '#f8f8f5', '#1f2830', '#ad3832', '#b99359'];
+  const state = {
+    face: 'front', tab: 'design', finish: 'navy', zoom: 1,
+    selectedId: null, dragging: null,
+    faces: { front: [], back: [] },
+    undo: [], redo: []
+  };
+  const canvas = document.querySelector('#productCanvas');
+  const ctx = canvas.getContext('2d');
+  const imageCache = new Map();
+  const dbPromise = openDraftDb();
+  let toastTimer;
+
+  function openDraftDb() {
+    return new Promise((resolve) => {
+      if (!('indexedDB' in window)) return resolve(null);
+      const request = indexedDB.open('khac-rieng-drafts', 1);
+      request.onupgradeneeded = () => {
+        if (!request.result.objectStoreNames.contains('drafts')) request.result.createObjectStore('drafts');
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => resolve(null);
+    });
+  }
+
+  async function readDraft() {
+    const db = await dbPromise;
+    if (!db) return null;
+    return new Promise((resolve) => {
+      const request = db.transaction('drafts', 'readonly').objectStore('drafts').get('current');
+      request.onsuccess = () => resolve(request.result || null);
+      request.onerror = () => resolve(null);
+    });
+  }
+
+  let persistTimer;
+  function saveDraft() {
+    clearTimeout(persistTimer);
+    const note = document.querySelector('.autosave');
+    if (note) note.innerHTML = '<i></i> Đang lưu thiết kế';
+    persistTimer = setTimeout(async () => {
+      const db = await dbPromise;
+      if (!db) {
+        if (note) note.innerHTML = '<i></i> Đang làm việc';
+        return;
+      }
+      const draft = { faces: state.faces, finish: state.finish, version: 1, savedAt: Date.now() };
+      const request = db.transaction('drafts', 'readwrite').objectStore('drafts').put(draft, 'current');
+      request.onsuccess = () => { if (note) note.innerHTML = '<i></i> Đã lưu trên thiết bị'; };
+      request.onerror = () => { if (note) note.innerHTML = '<i></i> Chưa lưu được'; };
+    }, 350);
+  }
+
+  function clone(value) { return JSON.parse(JSON.stringify(value)); }
+  function pushHistory() {
+    state.undo.push(JSON.stringify({ faces: state.faces, finish: state.finish }));
+    if (state.undo.length > 30) state.undo.shift();
+    state.redo.length = 0;
+    updateHistoryButtons();
+  }
+  function restoreSnapshot(serialized) {
+    const snapshot = JSON.parse(serialized);
+    state.faces = snapshot.faces;
+    state.finish = snapshot.finish || 'navy';
+    const current = state.faces[state.face];
+    state.selectedId = current.length ? current[current.length - 1].id : null;
+    renderAll();
+  }
+  function undo() {
+    if (!state.undo.length) return;
+    state.redo.push(JSON.stringify({ faces: state.faces, finish: state.finish }));
+    restoreSnapshot(state.undo.pop());
+    updateHistoryButtons(); saveDraft();
+  }
+  function redo() {
+    if (!state.redo.length) return;
+    state.undo.push(JSON.stringify({ faces: state.faces, finish: state.finish }));
+    restoreSnapshot(state.redo.pop());
+    updateHistoryButtons(); saveDraft();
+  }
+  function updateHistoryButtons() {
+    const undoButton = document.querySelector('#undoButton');
+    const redoButton = document.querySelector('#redoButton');
+    undoButton.disabled = !state.undo.length;
+    redoButton.disabled = !state.redo.length;
+    undoButton.classList.toggle('is-muted', !state.undo.length);
+    redoButton.classList.toggle('is-muted', !state.redo.length);
+  }
+  function activeItems() { return state.faces[state.face]; }
+  function makeId() { return `layer-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`; }
+  function addItem(item) {
+    if (item.type === 'image' && activeItems().filter((layer) => layer.type === 'image').length >= 10) {
+      showToast('Mỗi mặt sản phẩm có thể dùng tối đa 10 hình ảnh.'); return;
+    }
+    pushHistory();
+    const complete = { id: makeId(), x: 50, y: 50, width: item.type === 'text' ? 78 : 32, height: item.type === 'text' ? 12 : 25, ...item };
+    activeItems().push(complete);
+    state.selectedId = complete.id;
+    state.tab = item.type === 'text' ? 'text' : state.tab;
+    renderAll(); saveDraft();
+  }
+  function selectedItem() { return activeItems().find((item) => item.id === state.selectedId) || null; }
+  function changeSelected(change) {
+    const item = selectedItem();
+    if (!item) return;
+    Object.assign(item, change);
+    draw(); renderPanel(); saveDraft();
+  }
+  function deleteItem(id) {
+    const index = activeItems().findIndex((item) => item.id === id);
+    if (index < 0) return;
+    pushHistory(); activeItems().splice(index, 1);
+    state.selectedId = activeItems().length ? activeItems()[Math.max(0, index - 1)].id : null;
+    renderAll(); saveDraft();
+  }
+
+  function roundedRect(context, x, y, width, height, radius) {
+    const r = Math.min(radius, width / 2, height / 2);
+    context.beginPath();
+    if (context.roundRect) context.roundRect(x, y, width, height, r);
+    else {
+      context.moveTo(x + r, y); context.arcTo(x + width, y, x + width, y + height, r);
+      context.arcTo(x + width, y + height, x, y + height, r); context.arcTo(x, y + height, x, y, r);
+      context.arcTo(x, y, x + width, y, r);
+    }
+    context.closePath();
+  }
+
+  function productBase(context, face, withGuides) {
+    const finish = FINISHES[state.finish] || FINISHES.navy;
+    context.clearRect(0, 0, W, H);
+    context.save();
+    context.shadowColor = 'rgba(4, 13, 22, .30)'; context.shadowBlur = 45; context.shadowOffsetX = 0; context.shadowOffsetY = 26;
+    roundedRect(context, 119, 70, 662, 1320, 66);
+    const body = context.createLinearGradient(114, 0, 785, 0);
+    body.addColorStop(0, finish.edge); body.addColorStop(.07, finish.left); body.addColorStop(.36, finish.mid);
+    body.addColorStop(.61, finish.mid); body.addColorStop(.95, finish.right); body.addColorStop(1, finish.edge);
+    context.fillStyle = body; context.fill(); context.restore();
+    context.save(); roundedRect(context, 131, 83, 638, 1294, 54); context.clip();
+    const sheen = context.createLinearGradient(130, 0, 770, 0);
+    sheen.addColorStop(0, 'rgba(255,255,255,.12)'); sheen.addColorStop(.06, 'rgba(255,255,255,.035)');
+    sheen.addColorStop(.21, 'rgba(255,255,255,0)'); sheen.addColorStop(.82, 'rgba(255,255,255,0)'); sheen.addColorStop(1, 'rgba(255,255,255,.06)');
+    context.fillStyle = sheen; context.fillRect(130, 80, 640, 1300);
+    const topTint = context.createLinearGradient(0, 100, 0, 570);
+    topTint.addColorStop(0, 'rgba(255,255,255,.035)'); topTint.addColorStop(.5, 'rgba(255,255,255,0)'); topTint.addColorStop(1, 'rgba(0,0,0,.10)');
+    context.fillStyle = topTint; context.fillRect(130, 80, 640, 500);
+    context.restore();
+    context.save();
+    context.strokeStyle = 'rgba(255,255,255,.08)'; context.lineWidth = 2;
+    roundedRect(context, 131, 83, 638, 1294, 54); context.stroke();
+    context.strokeStyle = 'rgba(0,0,0,.82)'; context.lineWidth = 11; context.beginPath(); context.moveTo(125, 568); context.lineTo(775, 568); context.stroke();
+    context.strokeStyle = 'rgba(255,255,255,.25)'; context.lineWidth = 2; context.beginPath(); context.moveTo(133, 573); context.lineTo(767, 573); context.stroke();
+    context.strokeStyle = 'rgba(255,255,255,.15)'; context.lineWidth = 1; context.beginPath(); context.moveTo(137, 584); context.lineTo(763, 584); context.stroke();
+    const hingeX = face === 'front' ? 87 : 768;
+    const hinge = context.createLinearGradient(hingeX, 0, hingeX + 45, 0);
+    hinge.addColorStop(0, '#3a4246'); hinge.addColorStop(.28, '#b4b9b8'); hinge.addColorStop(.55, '#60696c'); hinge.addColorStop(1, '#252d32');
+    roundedRect(context, hingeX, 542, 45, 50, 13); context.fillStyle = hinge; context.fill();
+    context.strokeStyle = 'rgba(16,21,25,.7)'; context.lineWidth = 2; roundedRect(context, hingeX + 8, 548, 25, 37, 9); context.stroke();
+    context.fillStyle = '#c1c4c1'; context.beginPath(); context.arc(hingeX + 21, 555, 3, 0, Math.PI * 2); context.fill();
+    context.beginPath(); context.arc(hingeX + 21, 578, 3, 0, Math.PI * 2); context.fill();
+    context.restore();
+    if (withGuides) {
+      context.save(); context.setLineDash([8, 8]); context.strokeStyle = 'rgba(255,255,255,.86)'; context.lineWidth = 2;
+      roundedRect(context, SAFE.x, SAFE.y, SAFE.w, SAFE.h, 26); context.stroke(); context.restore();
+    }
+  }
+
+  function getImage(src) {
+    if (imageCache.has(src)) return imageCache.get(src);
+    const image = new Image(); imageCache.set(src, image);
+    image.onload = () => draw(); image.onerror = () => imageCache.delete(src); image.src = src;
+    return image;
+  }
+  function textMetrics(context, item) {
+    const size = item.size || 72;
+    const family = item.font === 'serif' ? 'Georgia, "Times New Roman", serif' : 'Arial, sans-serif';
+    context.save(); context.font = `${item.weight || 600} ${size}px ${family}`;
+    const lines = String(item.text || '').split('\n');
+    const width = Math.min(SAFE.w * .92, Math.max(...lines.map((line) => context.measureText(line || ' ').width), size));
+    context.restore();
+    return { width, height: Math.max(1, lines.length) * size * 1.34 };
+  }
+  function itemBounds(context, item) {
+    const centerX = SAFE.x + SAFE.w * item.x / 100;
+    const centerY = SAFE.y + SAFE.h * item.y / 100;
+    let width, height;
+    if (item.type === 'text') ({ width, height } = textMetrics(context, item));
+    else { width = SAFE.w * (item.width || 30) / 100; height = SAFE.h * (item.height || 20) / 100; }
+    return { x: centerX - width / 2, y: centerY - height / 2, width, height, centerX, centerY };
+  }
+  function drawItems(context, face, selected) {
+    for (const item of state.faces[face]) {
+      const box = itemBounds(context, item);
+      if (item.type === 'text') {
+        const size = item.size || 72;
+        const family = item.font === 'serif' ? 'Georgia, "Times New Roman", serif' : 'Arial, sans-serif';
+        const lines = String(item.text || '').split('\n');
+        context.save(); context.fillStyle = item.color || PALETTE[0]; context.textAlign = 'center'; context.textBaseline = 'middle';
+        context.font = `${item.weight || 600} ${size}px ${family}`; context.shadowColor = 'rgba(0,0,0,.17)'; context.shadowBlur = 4;
+        const lineHeight = size * 1.25; const start = box.centerY - ((lines.length - 1) * lineHeight) / 2;
+        lines.forEach((line, index) => context.fillText(line, box.centerX, start + index * lineHeight, SAFE.w * .91));
+        context.restore();
+      } else {
+        const image = getImage(item.src);
+        if (image.complete && image.naturalWidth) {
+          const maxW = box.width, maxH = box.height;
+          const ratio = Math.min(maxW / image.naturalWidth, maxH / image.naturalHeight);
+          const drawW = image.naturalWidth * ratio, drawH = image.naturalHeight * ratio;
+          context.save(); context.globalAlpha = item.opacity == null ? 1 : item.opacity;
+          context.drawImage(image, box.centerX - drawW / 2, box.centerY - drawH / 2, drawW, drawH); context.restore();
+        }
+      }
+      if (selected && item.id === selected) {
+        context.save(); context.setLineDash([5, 5]); context.strokeStyle = 'rgba(191,55,51,.92)'; context.lineWidth = 3;
+        const pad = item.type === 'text' ? 12 : 5;
+        context.strokeRect(box.x - pad, box.y - pad, box.width + pad * 2, box.height + pad * 2);
+        context.setLineDash([]); context.fillStyle = '#fff'; context.strokeStyle = '#bf3733';
+        [[box.x - pad, box.y - pad], [box.x + box.width + pad, box.y - pad], [box.x - pad, box.y + box.height + pad], [box.x + box.width + pad, box.y + box.height + pad]].forEach(([x,y]) => { context.beginPath(); context.arc(x,y,7,0,Math.PI*2); context.fill(); context.stroke(); });
+        context.restore();
+      }
+    }
+  }
+  function draw(face = state.face, withGuides = true, selected = state.selectedId) {
+    productBase(ctx, face, withGuides);
+    drawItems(ctx, face, withGuides ? selected : null);
+  }
+  function renderAll() {
+    draw(); renderPanel(); updateHistoryButtons(); updateImageCount();
+    document.querySelector('#productStage').style.transform = `scale(${state.zoom})`;
+    document.querySelectorAll('.face-option').forEach((button) => button.classList.toggle('is-active', button.dataset.face === state.face));
+    document.querySelectorAll('.rail-tab').forEach((button) => button.classList.toggle('is-active', button.dataset.tab === state.tab));
+  }
+  function updateImageCount() {
+    const count = activeItems().filter((item) => item.type === 'image').length;
+    document.querySelector('#imageCount').textContent = String(count);
+  }
+  function escapeHtml(value) {
+    return String(value).replace(/[&<>"']/g, (character) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[character]));
+  }
+  function iconSvg(key, color = '#e7e2d8') {
+    const forms = {
+      heart: '<path d="M50 84 15 51C-4 28 13 7 32 14c8 3 13 9 18 16 6-8 12-13 20-16 20-7 37 14 18 37Z"/>',
+      star: '<path d="m50 6 12 29 31 2-24 20 8 31-27-17-27 17 8-31L7 37l31-2z"/>',
+      mountain: '<path d="m8 78 25-38 12 17 17-32 30 53H8Z"/><path d="m41 56 9-12 9 15" fill="none"/>',
+      flower: '<circle cx="50" cy="50" r="11"/><ellipse cx="50" cy="25" rx="11" ry="18"/><ellipse cx="50" cy="75" rx="11" ry="18"/><ellipse cx="25" cy="50" rx="18" ry="11"/><ellipse cx="75" cy="50" rx="18" ry="11"/>',
+      wave: '<path d="M8 38c14-18 26-18 42 0s28 18 42 0M8 58c14-18 26-18 42 0s28 18 42 0" fill="none" stroke-width="7" stroke-linecap="round"/>',
+      moon: '<path d="M75 14c-4 29-25 48-55 49 8 23 33 35 56 24 25-12 30-45 10-63-3-4-7-7-11-10Z"/>'
+    };
+    const fill = key === 'wave' || key === 'mountain' ? 'none' : color;
+    const stroke = key === 'wave' || key === 'mountain' ? color : 'none';
+    return `<svg viewBox="0 0 100 100" aria-hidden="true" fill="${fill}" stroke="${stroke}" stroke-linejoin="round" stroke-linecap="round">${forms[key] || forms.star}</svg>`;
+  }
+  const gallery = [
+    { key:'heart', name:'Trái tim' }, { key:'star', name:'Ngôi sao' }, { key:'mountain', name:'Núi' },
+    { key:'flower', name:'Hoa' }, { key:'wave', name:'Sóng' }, { key:'moon', name:'Trăng khuyết' }
+  ];
+
+  function renderPanel() {
+    const body = document.querySelector('#editorBody');
+    const title = document.querySelector('#panelTitle');
+    const tabTitles = { design:'Thiết kế', upload:'Tải ảnh', gallery:'Hình ảnh', text:'Chữ' };
+    title.textContent = tabTitles[state.tab];
+    if (state.tab === 'design') renderDesignPanel(body);
+    if (state.tab === 'upload') renderUploadPanel(body);
+    if (state.tab === 'gallery') renderGalleryPanel(body);
+    if (state.tab === 'text') renderTextPanel(body);
+    updateImageCount();
+  }
+  function renderDesignPanel(body) {
+    const items = activeItems();
+    if (!items.length) {
+      body.innerHTML = `<div class="empty-state"><div class="empty-orbit" aria-hidden="true">✦</div><h3>Bắt đầu tạo dấu ấn riêng</h3><p>Thêm chữ hoặc hình ảnh vào vùng khắc để xem trước trên sản phẩm.</p><div class="inline-actions"><button class="small-primary" data-action="new-text" type="button">＋ Thêm chữ</button><button class="small-secondary" data-action="goto-gallery" type="button">Chọn hình</button></div></div><div class="tip-box"><strong>Mẹo:</strong> Kéo các thành phần trên sản phẩm để điều chỉnh vị trí.</div>`;
+      body.querySelector('[data-action="new-text"]').addEventListener('click', () => { state.tab = 'text'; renderAll(); body.querySelector('#textInput')?.focus(); });
+      body.querySelector('[data-action="goto-gallery"]').addEventListener('click', () => { state.tab = 'gallery'; renderAll(); });
+      return;
+    }
+    const rows = items.map((item) => {
+      const label = item.type === 'text' ? item.text.replace(/\n/g, ' ') : item.name;
+      const thumb = item.type === 'text' ? escapeHtml((item.text || 'T').slice(0, 2)) : `<img src="${item.src}" alt="" />`;
+      return `<div class="layer-row ${item.id === state.selectedId ? 'is-selected' : ''}" data-select="${item.id}" role="button" tabindex="0"><span class="layer-thumb">${thumb}</span><span class="layer-name">${escapeHtml(label || 'Hình ảnh')}<small class="layer-kind">${item.type === 'text' ? 'Văn bản' : 'Hình ảnh'}</small></span><button class="layer-delete" data-delete="${item.id}" type="button" aria-label="Xóa ${escapeHtml(label || 'thành phần')}">×</button></div>`;
+    }).join('');
+    const finishButtons = Object.entries(FINISHES).map(([key, finish]) => `<button class="finish-chip ${state.finish === key ? 'is-current' : ''}" data-finish="${key}" type="button" title="${finish.label}" aria-label="${finish.label}" style="background:linear-gradient(110deg,${finish.left},${finish.mid},${finish.right)}"></button>`).join('');
+    body.innerHTML = `<div class="panel-section-title"><h3>Các thành phần thiết kế</h3><span>${items.length} thành phần</span></div><div class="layer-list">${rows}</div><div class="inline-actions"><button class="small-secondary" data-add="text" type="button">＋ Thêm chữ</button><button class="small-secondary" data-add="image" type="button">＋ Thêm hình</button></div><div class="finish-picker"><span class="section-label">Màu sản phẩm</span><div class="color-line">${finishButtons}<span class="finish-name">${FINISHES[state.finish].label}</span></div></div>${selectedItem() ? renderSelectedEditor(selectedItem()) : ''}`;
+    body.querySelectorAll('[data-select]').forEach((row) => {
+      const choose = () => { state.selectedId = row.dataset.select; renderAll(); };
+      row.addEventListener('click', (event) => { if (!event.target.closest('[data-delete]')) choose(); });
+      row.addEventListener('keydown', (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); choose(); } });
+    });
+    body.querySelectorAll('[data-delete]').forEach((button) => button.addEventListener('click', (event) => { event.stopPropagation(); deleteItem(button.dataset.delete); }));
+    body.querySelector('[data-add="text"]').addEventListener('click', () => { state.tab = 'text'; renderAll(); body.querySelector('#textInput')?.focus(); });
+    body.querySelector('[data-add="image"]').addEventListener('click', () => { state.tab = 'upload'; renderAll(); });
+    body.querySelectorAll('[data-finish]').forEach((button) => button.addEventListener('click', () => { pushHistory(); state.finish = button.dataset.finish; renderAll(); saveDraft(); }));
+    bindSelectedEditor(body);
+  }
+  function renderSelectedEditor(item) {
+    if (item.type === 'text') {
+      const colors = PALETTE.map((color) => `<button class="color-chip ${item.color === color ? 'is-current' : ''}" data-color="${color}" style="background:${color}" type="button" title="${color}" aria-label="Chọn màu ${color}"></button>`).join('');
+      return `<div class="selected-editor"><div class="panel-section-title"><h3>Chỉnh sửa chữ</h3></div><label class="field-label">Nội dung<input id="editText" value="${escapeHtml(item.text)}" maxlength="80" /></label><div class="field-label"><span>Cỡ chữ</span><div class="range-line"><input id="editSize" type="range" min="34" max="126" value="${item.size || 72}" /><output>${item.size || 72}</output></div></div><div class="field-label"><span>Màu chữ</span><div class="color-line">${colors}</div></div></div>`;
+    }
+    return `<div class="selected-editor"><div class="panel-section-title"><h3>Chỉnh sửa hình</h3></div><label class="field-label">Kích thước<div class="range-line"><input id="editWidth" type="range" min="12" max="75" value="${item.width || 32}" /><output>${item.width || 32}%</output></div></label><label class="field-label">Độ mờ<div class="range-line"><input id="editOpacity" type="range" min="25" max="100" value="${Math.round((item.opacity == null ? 1 : item.opacity) * 100)}" /><output>${Math.round((item.opacity == null ? 1 : item.opacity) * 100)}%</output></div></label></div>`;
+  }
+  function bindSelectedEditor(body) {
+    const item = selectedItem(); if (!item) return;
+    const text = body.querySelector('#editText');
+    if (text) text.addEventListener('input', () => { item.text = text.value; draw(); saveDraft(); });
+    const size = body.querySelector('#editSize');
+    if (size) size.addEventListener('input', () => { item.size = Number(size.value); size.nextElementSibling.value = size.value; draw(); saveDraft(); });
+    body.querySelectorAll('[data-color]').forEach((button) => button.addEventListener('click', () => { item.color = button.dataset.color; renderAll(); saveDraft(); }));
+    const width = body.querySelector('#editWidth');
+    if (width) width.addEventListener('input', () => { item.width = Number(width.value); width.nextElementSibling.value = `${width.value}%`; draw(); saveDraft(); });
+    const opacity = body.querySelector('#editOpacity');
+    if (opacity) opacity.addEventListener('input', () => { item.opacity = Number(opacity.value) / 100; opacity.nextElementSibling.value = `${opacity.value}%`; draw(); saveDraft(); });
+  }
+  function renderTextPanel(body) {
+    body.innerHTML = `<div class="text-panel"><h3>Thêm thông điệp</h3><p class="panel-description">Một cái tên, ngày kỷ niệm hay câu nói ngắn sẽ làm món quà thêm đặc biệt.</p><input id="textInput" class="text-entry" maxlength="80" placeholder="Nhập nội dung của bạn" aria-label="Nội dung chữ" /><button class="small-primary full-width" id="addTextButton" type="button">＋ Thêm chữ vào sản phẩm</button><span class="section-label">Kiểu chữ</span><div class="font-options"><button class="font-choice is-active" data-font="sans" type="button">Hiện đại</button><button class="font-choice serif" data-font="serif" type="button">Thanh lịch</button></div><div class="tip-box">Bạn có thể chọn chữ sau khi thêm để thay đổi cỡ và màu.</div></div>`;
+    const input = body.querySelector('#textInput');
+    const add = () => {
+      const text = input.value.trim(); if (!text) { input.focus(); return; }
+      addItem({ type:'text', text, size:72, font:body.querySelector('[data-font].is-active')?.dataset.font || 'sans', color:PALETTE[0], width:78 });
+    };
+    body.querySelector('#addTextButton').addEventListener('click', add);
+    input.addEventListener('keydown', (event) => { if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') add(); });
+    body.querySelectorAll('[data-font]').forEach((button) => button.addEventListener('click', () => { body.querySelectorAll('[data-font]').forEach((choice) => choice.classList.toggle('is-active', choice === button)); }));
+  }
+  function renderUploadPanel(body) {
+    body.innerHTML = `<div class="upload-panel"><h3>Tải hình ảnh của bạn</h3><p class="panel-description">Thêm logo, hình kỷ niệm hoặc nét vẽ riêng để tạo thiết kế độc đáo.</p><input id="imageInput" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" multiple hidden /><div class="dropzone" id="dropzone"><div class="upload-symbol" aria-hidden="true">↑</div><strong>Kéo thả hình ảnh vào đây</strong><span>PNG, JPG, WEBP hoặc SVG · tối đa 4 MB mỗi ảnh</span><button id="chooseImages" type="button">Chọn tệp từ thiết bị</button></div><div class="upload-tip">Dùng ảnh rõ nét, nền trong suốt sẽ cho kết quả khắc đẹp hơn. Tối đa 10 hình trên mỗi mặt sản phẩm.</div></div>`;
+    const input = body.querySelector('#imageInput'); const zone = body.querySelector('#dropzone');
+    body.querySelector('#chooseImages').addEventListener('click', () => input.click());
+    input.addEventListener('change', () => { Array.from(input.files || []).forEach(addUploadedFile); input.value = ''; });
+    zone.addEventListener('dragover', (event) => { event.preventDefault(); zone.classList.add('drag-over'); });
+    zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+    zone.addEventListener('drop', (event) => { event.preventDefault(); zone.classList.remove('drag-over'); Array.from(event.dataTransfer.files || []).forEach(addUploadedFile); });
+  }
+  function addUploadedFile(file) {
+    if (!file.type.startsWith('image/')) { showToast('Tệp này không phải hình ảnh.'); return; }
+    if (file.size > 4 * 1024 * 1024) { showToast('Mỗi hình ảnh cần nhỏ hơn 4 MB.'); return; }
+    if (activeItems().filter((item) => item.type === 'image').length >= 10) { showToast('Mỗi mặt sản phẩm có thể dùng tối đa 10 hình ảnh.'); return; }
+    const reader = new FileReader();
+    reader.onload = () => addItem({ type:'image', name:file.name.replace(/\.[^.]+$/, '') || 'Hình tải lên', src:String(reader.result), width:34, height:26 });
+    reader.onerror = () => showToast('Không đọc được tệp hình ảnh này.');
+    reader.readAsDataURL(file);
+  }
+  function renderGalleryPanel(body) {
+    body.innerHTML = `<div class="gallery-panel"><h3>Chọn hình trang trí</h3><p class="panel-description">Thêm một biểu tượng đơn giản rồi tùy chỉnh kích thước và vị trí.</p><div class="gallery-grid">${gallery.map((item) => `<button class="gallery-card" data-symbol="${item.key}" type="button" aria-label="Thêm hình ${item.name}">${iconSvg(item.key)}</button>`).join('')}</div><div class="gallery-grid-labels">${gallery.map((item) => `<p class="gallery-name">${item.name}</p>`).join('')}</div><div class="tip-box">Hình trang trí được tạo dạng vector để giữ nét rõ khi phóng to.</div></div>`;
+    body.querySelectorAll('[data-symbol]').forEach((button) => button.addEventListener('click', () => {
+      const selected = gallery.find((item) => item.key === button.dataset.symbol);
+      const svg = iconSvg(selected.key, '#e8e2d7').replace('<svg ', '<svg xmlns="http://www.w3.org/2000/svg" ');
+      addItem({ type:'image', name:selected.name, src:`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`, width:28, height:22 });
+    }));
+  }
+
+  function pointerPoint(event) {
+    const rect = canvas.getBoundingClientRect();
+    return { x:(event.clientX - rect.left) * W / rect.width, y:(event.clientY - rect.top) * H / rect.height };
+  }
+  function hitTest(point) {
+    for (let index = activeItems().length - 1; index >= 0; index--) {
+      const item = activeItems()[index]; const box = itemBounds(ctx, item); const padding = item.type === 'text' ? 16 : 8;
+      if (point.x >= box.x - padding && point.x <= box.x + box.width + padding && point.y >= box.y - padding && point.y <= box.y + box.height + padding) return item;
+    }
+    return null;
+  }
+  canvas.addEventListener('pointerdown', (event) => {
+    const point = pointerPoint(event); const item = hitTest(point);
+    if (item) {
+      state.selectedId = item.id;
+      const box = itemBounds(ctx, item);
+      state.dragging = { id:item.id, dx:box.centerX - point.x, dy:box.centerY - point.y };
+      canvas.setPointerCapture(event.pointerId); canvas.style.cursor = 'grabbing'; renderPanel(); draw(); event.preventDefault();
+    } else {
+      state.selectedId = null; renderPanel(); draw();
+    }
+  });
+  canvas.addEventListener('pointermove', (event) => {
+    if (!state.dragging) { canvas.style.cursor = hitTest(pointerPoint(event)) ? 'grab' : 'crosshair'; return; }
+    const item = activeItems().find((layer) => layer.id === state.dragging.id); if (!item) return;
+    const point = pointerPoint(event);
+    item.x = Math.max(2, Math.min(98, ((point.x + state.dragging.dx - SAFE.x) / SAFE.w) * 100));
+    item.y = Math.max(2, Math.min(98, ((point.y + state.dragging.dy - SAFE.y) / SAFE.h) * 100));
+    draw();
+  });
+  const stopDrag = () => { if (state.dragging) { state.dragging = null; canvas.style.cursor = 'grab'; renderPanel(); saveDraft(); } };
+  canvas.addEventListener('pointerup', stopDrag); canvas.addEventListener('pointercancel', stopDrag); canvas.addEventListener('lostpointercapture', stopDrag);
+
+  function showToast(message) {
+    const toast = document.querySelector('#toast'); toast.textContent = message; toast.classList.add('show');
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => toast.classList.remove('show'), 2800);
+  }
+  function setFace(face) { state.face = face; state.selectedId = state.faces[face].length ? state.faces[face][state.faces[face].length - 1].id : null; renderAll(); }
+  function setTab(tab) { state.tab = tab; renderAll(); }
+
+  function ensureImages(face) {
+    return Promise.all(state.faces[face].filter((item) => item.type === 'image').map((item) => new Promise((resolve) => {
+      const image = getImage(item.src);
+      if (image.complete && image.naturalWidth) return resolve();
+      image.onload = () => resolve(); image.onerror = () => resolve();
+    })));
+  }
+  async function exportFace(face) {
+    await ensureImages(face);
+    const exportCanvas = document.createElement('canvas'); exportCanvas.width = W; exportCanvas.height = H;
+    const exportContext = exportCanvas.getContext('2d');
+    productBase(exportContext, face, false); drawItems(exportContext, face, null);
+    return new Promise((resolve) => exportCanvas.toBlob((blob) => resolve({ blob, dataUrl:exportCanvas.toDataURL('image/png') }), 'image/png'));
+  }
+  function downloadBlob(blob, name) {
+    if (!blob) return;
+    const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = name;
+    document.body.appendChild(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 3000);
+  }
+  async function openPreview() {
+    const modal = document.querySelector('#previewModal'); const area = document.querySelector('#previewExports');
+    area.innerHTML = '<p class="panel-description">Đang tạo ảnh xem trước…</p>'; modal.hidden = false;
+    const [front, back] = await Promise.all([exportFace('front'), exportFace('back')]);
+    area.innerHTML = `<div class="preview-face"><img alt="Thiết kế mặt trước" src="${front.dataUrl}" /><strong>Mặt trước</strong></div><div class="preview-face"><img alt="Thiết kế mặt sau" src="${back.dataUrl}" /><strong>Mặt sau</strong></div>`;
+    document.querySelector('#downloadDesign').onclick = () => { downloadBlob(front.blob, 'thiet-ke-mat-truoc.png'); setTimeout(() => downloadBlob(back.blob, 'thiet-ke-mat-sau.png'), 250); showToast('Đang tải ảnh thiết kế PNG.'); };
+  }
+  function openSubmit() {
+    document.querySelector('#submitModal').hidden = false;
+    document.querySelector('#formFeedback').textContent = '';
+    document.querySelector('#manualExport').hidden = Boolean(SUBMISSION_ENDPOINT);
+  }
+  document.querySelectorAll('[data-close]').forEach((button) => button.addEventListener('click', () => { document.getElementById(button.dataset.close).hidden = true; }));
+  document.querySelectorAll('.modal-backdrop').forEach((backdrop) => backdrop.addEventListener('click', (event) => { if (event.target === backdrop) backdrop.hidden = true; }));
+  document.addEventListener('keydown', (event) => { if (event.key === 'Escape') document.querySelectorAll('.modal-backdrop').forEach((modal) => { modal.hidden = true; }); });
+  document.querySelector('#openPreview').addEventListener('click', openPreview);
+  document.querySelector('#openSubmit').addEventListener('click', openSubmit);
+  document.querySelector('#previewSubmit').addEventListener('click', () => { document.querySelector('#previewModal').hidden = true; openSubmit(); });
+  document.querySelector('#manualExport').addEventListener('click', async () => {
+    const [front, back] = await Promise.all([exportFace('front'), exportFace('back')]);
+    downloadBlob(front.blob, 'thiet-ke-mat-truoc.png');
+    setTimeout(() => downloadBlob(back.blob, 'thiet-ke-mat-sau.png'), 250);
+    showToast('Đang tải ảnh PNG của hai mặt sản phẩm.');
+  });
+  document.querySelector('#undoButton').addEventListener('click', undo);
+  document.querySelector('#redoButton').addEventListener('click', redo);
+  document.querySelector('#zoomIn').addEventListener('click', () => { state.zoom = Math.min(1.18, state.zoom + .06); renderAll(); });
+  document.querySelector('#zoomOut').addEventListener('click', () => { state.zoom = Math.max(.82, state.zoom - .06); renderAll(); });
+  document.querySelector('#resetDesign').addEventListener('click', () => {
+    if (!activeItems().length) { showToast('Mặt này chưa có thành phần nào.'); return; }
+    pushHistory(); state.faces[state.face] = []; state.selectedId = null; renderAll(); saveDraft(); showToast('Đã xóa thiết kế trên mặt này.');
+  });
+  document.querySelector('#moreOptions').addEventListener('click', () => showToast('Chọn thành phần trên sản phẩm để chỉnh sửa.'));
+  document.querySelectorAll('.face-option').forEach((button) => button.addEventListener('click', () => setFace(button.dataset.face)));
+  document.querySelectorAll('.rail-tab').forEach((button) => button.addEventListener('click', () => setTab(button.dataset.tab)));
+
+  document.querySelector('#submitForm').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget; if (!form.reportValidity()) return;
+    const button = document.querySelector('#submitFormButton'); const feedback = document.querySelector('#formFeedback');
+    const formData = new FormData(form); const payload = {
+      name:String(formData.get('name') || '').trim(), contact:String(formData.get('contact') || '').trim(),
+      note:String(formData.get('note') || '').trim(), product:'Classic Navy Matte',
+      designs:{ front:(await exportFace('front')).dataUrl, back:(await exportFace('back')).dataUrl }
+    };
+    button.disabled = true; button.textContent = 'Đang gửi…'; feedback.classList.remove('is-success');
+    try {
+      if (!SUBMISSION_ENDPOINT) {
+        feedback.textContent = 'Email/Drive nhận đơn chưa được kết nối. Thiết kế chưa được gửi; hãy dùng “Tải ảnh PNG” để lưu bản thiết kế.';
+        feedback.classList.remove('is-success');
+        return;
+      }
+      const response = await fetch(SUBMISSION_ENDPOINT, { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify(payload) });
+      if (!response.ok) throw new Error(`Submission failed (${response.status})`);
+      feedback.textContent = 'Đã gửi thiết kế thành công. Cửa hàng sẽ liên hệ lại với bạn.';
+      feedback.classList.add('is-success'); form.reset(); showToast('Đã gửi thiết kế thành công.');
+    } catch (error) {
+      feedback.textContent = 'Chưa gửi được thiết kế. Vui lòng thử lại sau hoặc tải ảnh PNG để lưu bản thiết kế.';
+      console.error('Design submission failed', error);
+    } finally {
+      button.disabled = false; button.textContent = 'Gửi yêu cầu thiết kế';
+    }
+  });
+
+  (async () => {
+    const saved = await readDraft();
+    if (saved?.faces?.front && saved?.faces?.back) { state.faces = saved.faces; state.finish = saved.finish || 'navy'; }
+    const allImages = [...state.faces.front, ...state.faces.back].filter((item) => item.type === 'image');
+    allImages.forEach((item) => getImage(item.src));
+    state.selectedId = activeItems().length ? activeItems()[activeItems().length - 1].id : null;
+    renderAll();
+  })();
+})();
