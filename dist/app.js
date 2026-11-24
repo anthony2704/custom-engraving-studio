@@ -564,7 +564,14 @@
     return Promise.all(state.faces[face].filter((item) => item.type === 'image').map((item) => new Promise((resolve) => {
       const image = getImage(item.src);
       if (image.complete && image.naturalWidth) return resolve();
-      image.onload = () => resolve(); image.onerror = () => resolve();
+      const finish = () => {
+        image.removeEventListener('load', finish);
+        image.removeEventListener('error', finish);
+        resolve();
+      };
+      image.addEventListener('load', finish, { once: true });
+      image.addEventListener('error', finish, { once: true });
+      if (image.complete) finish();
     })));
   }
   async function exportFace(face) {
