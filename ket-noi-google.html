@@ -13,7 +13,18 @@
 <main>
   <p>KHẮC RIÊNG · CLASSIC</p>
   <h1>Kết nối nhận thiết kế qua Google</h1>
-  <p>Dành cho chủ cửa hàng. Mỗi yêu cầu được lưu riêng hai ảnh PNG và thông tin khách vào Drive, rồi gửi email tới <strong>khoa.v.nguyen.work@gmail.com</strong>. Ảnh trong Drive để riêng tư trong tài khoản chạy script.</p>
+  <p>Dành cho chủ cửa hàng. Mỗi yêu cầu được lưu riêng hai ảnh PNG, email và số điện thoại khách vào Drive, rồi gửi email tới <strong>khoa.v.nguyen.work@gmail.com</strong>. Thư mục được sắp theo <strong>email khách → mã yêu cầu</strong>; mỗi lần gửi giữ đủ hai ảnh riêng biệt.</p>
+  <section class="note" id="cap-nhat">
+    <h2 style="margin-top:0">Đã kết nối Google? Cập nhật phiên bản mới</h2>
+    <ol>
+      <li>Mở <a href="./google-apps-script-code.txt" target="_blank" rel="noopener">mã Code.gs mới nhất</a> và sao chép toàn bộ.</li>
+      <li>Trong <strong>dự án Apps Script hiện đang dùng</strong>, thay nội dung <strong>Code.gs</strong> bằng mã mới rồi lưu.</li>
+      <li>Chọn <strong>Deploy → Manage deployments</strong>, chọn deployment đang hoạt động, bấm biểu tượng <strong>bút chì / Edit</strong>.</li>
+      <li>Ở <strong>Version</strong> chọn <strong>New version</strong> rồi bấm <strong>Deploy</strong>. Cách này giữ nguyên URL và hai giá trị Cloudflare đã cấu hình.</li>
+      <li>Tải lại web và gửi mẫu mới. Drive sẽ có thư mục mang email khách, bên trong là thư mục từng mã yêu cầu; email sẽ ghi rõ số điện thoại nếu khách nhập.</li>
+    </ol>
+    <p>Chỉ lưu mã trong trình soạn thảo chưa cập nhật Web app đang chạy. Các đơn cũ vẫn xem được tại vị trí đã lưu; đơn mới được gom theo email sau khi triển khai phiên bản này.</p>
+  </section>
   <p class="note">Email được gửi ngay trong lần xử lý yêu cầu, không đi qua FormSubmit. Google không bảo đảm thời gian thư tới hộp thư. Gmail cá nhân có hạn mức Apps Script 100 người nhận/ngày; khi hết hạn mức, đơn vẫn được lưu và email chờ gửi lại.</p>
 
   <h2>1. Tạo script</h2>

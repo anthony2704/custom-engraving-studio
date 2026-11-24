@@ -36,7 +36,7 @@ function setup() {
 }
 
 function doGet() {
-  return jsonOutput_({ service: 'classic-design-intake', version: 1 });
+  return jsonOutput_({ service: 'classic-design-intake', version: 2 });
 }
 
 function doPost(event) {
@@ -57,7 +57,7 @@ function doPost(event) {
     try { emailSent = sendStoredEmail_(stored.folderId); } catch (_) {
       // Accept a safely stored design even if a Mail/Lock service is unavailable.
     }
-    return jsonOutput_({ success: true, requestId: design.requestId, stored: true, emailSent: emailSent, duplicate: stored.duplicate });
+    return jsonOutput_({ success: true, requestId: design.requestId, stored: true, emailSent: emailSent, duplicate: stored.duplicate, version: 2 });
   } catch (error) {
     var safeCodes = ['INVALID_REQUEST', 'NOT_CONFIGURED', 'UNAUTHORIZED', 'INVALID_FIELD', 'INVALID_IMAGE', 'IMAGE_TOO_LARGE', 'REQUEST_CONFLICT', 'BUSY'];
     var code = safeCodes.indexOf(error.intakeCode) >= 0 ? error.intakeCode : 'STORAGE_FAILED';
@@ -69,14 +69,33 @@ function validateDesign_(payload) {
   if (typeof payload.requestId !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9_-]{15,99}$/.test(payload.requestId)) fail_('INVALID_FIELD');
   if (payload.product !== 'Classic') fail_('INVALID_FIELD');
   var name = field_(payload.name, 1, 120, false);
-  var contact = field_(payload.contact, 1, 200, false);
-  var note = field_(payload.note === undefined ? '' : payload.note, 0, 3000, true);
+  var contact = field_(payload.contact === undefined ? payload.email : payload.contact, 1, 200, false);
+  var explicitEmail = payload.email === undefined || payload.email === '' ? '' : field_(payload.email, 1, 200, false);
+  var email = explicitEmail ? explicitEmail.toLowerCase() : (validEmail_(contact) ? contact.toLowerCase() : '');
+  if (email && !validEmail_(email)) fail_('INVALID_FIELD');
+  var phone = field_(payload.phone === undefined ? '' : payload.phone, 0, 30, false);
+  if (phone && !validPhone_(phone)) fail_('INVALID_FIELD');
+  if (!email && !phone && validPhone_(contact)) phone = contact;
+  var legacyNote = field_(payload.note === undefined ? '' : payload.note, 0, 3000, true);
+  // The proxy's legacy note includes the phone until this script is upgraded.
+  var note = typeof payload.customerNote === 'string' ? field_(payload.customerNote, 0, 3000, true) : legacyNote;
   if (!payload.designs || typeof payload.designs !== 'object') fail_('INVALID_IMAGE');
   var front = png_(payload.designs.front, 'thiet-ke-mat-truoc.png');
   var back = png_(payload.designs.back, 'thiet-ke-mat-sau.png');
   if (front.size + back.size > 2 * INTAKE_MAX_IMAGE_BYTES) fail_('IMAGE_TOO_LARGE');
-  var fingerprint = sha256_(JSON.stringify([payload.requestId, name, contact, note, 'Classic', front.sha256, back.sha256]));
-  return { requestId: payload.requestId, name: name, contact: contact, note: note, product: 'Classic', front: front, back: back, fingerprint: fingerprint };
+  var fingerprint = sha256_(JSON.stringify([payload.requestId, name, email || contact, phone, note, 'Classic', front.sha256, back.sha256]));
+  var legacyFingerprint = sha256_(JSON.stringify([payload.requestId, name, contact, legacyNote, 'Classic', front.sha256, back.sha256]));
+  return { requestId: payload.requestId, name: name, contact: contact, email: email, phone: phone, note: note, product: 'Classic', front: front, back: back, fingerprint: fingerprint, legacyFingerprint: legacyFingerprint };
+}
+
+function validEmail_(value) {
+  return typeof value === 'string' && value.length <= 200 && /^[^\s@/\\]+@[^\s@/\\]+\.[^\s@/\\]+$/.test(value);
+}
+
+function validPhone_(value) {
+  if (typeof value !== 'string') return false;
+  var digits = value.replace(/\D/g, '');
+  return /^\+?[0-9 ().-]+$/.test(value) && digits.length >= 7 && digits.length <= 15;
 }
 
 function field_(value, minimum, maximum, multiline) {
@@ -127,16 +146,22 @@ function persistDesign_(parentId, design) {
   if (!lock.tryLock(25000)) fail_('BUSY');
   try {
     var parent = DriveApp.getFolderById(parentId);
-    var matches = parent.getFoldersByName(design.requestId);
-    var folder = matches.hasNext() ? matches.next() : parent.createFolder(design.requestId);
+    var folder = findRequestFolder_(parent, design.requestId);
+    if (!folder) {
+      var customerName = design.email || 'Khach-chua-co-email';
+      var customers = parent.getFoldersByName(customerName);
+      var customer = customers.hasNext() ? customers.next() : parent.createFolder(customerName);
+      folder = customer.createFolder(design.requestId);
+    }
     var recordFile = firstFile_(folder, 'request.json');
     var record = recordFile ? JSON.parse(recordFile.getBlob().getDataAsString('UTF-8')) : null;
-    if (record && record.fingerprint !== design.fingerprint) fail_('REQUEST_CONFLICT');
+    var expectedFingerprint = record && record.version === 1 ? design.legacyFingerprint : design.fingerprint;
+    if (record && record.fingerprint !== expectedFingerprint) fail_('REQUEST_CONFLICT');
     if (record && record.stored === true) return { folderId: folder.getId(), duplicate: true };
     if (!record) {
       record = {
-        version: 1, requestId: design.requestId, fingerprint: design.fingerprint,
-        name: design.name, contact: design.contact, note: design.note, product: 'Classic',
+        version: 2, requestId: design.requestId, fingerprint: design.fingerprint,
+        name: design.name, contact: design.contact, email: design.email, phone: design.phone, note: design.note, product: 'Classic',
         receivedAt: new Date().toISOString(), stored: false, emailStatus: 'pending', emailAttempts: 0,
         images: { front: { name: design.front.filename, sha256: design.front.sha256 }, back: { name: design.back.filename, sha256: design.back.sha256 } }
       };
@@ -151,6 +176,23 @@ function persistDesign_(parentId, design) {
   } finally {
     lock.releaseLock();
   }
+}
+
+function findRequestFolder_(root, requestId) {
+  // Search both historical root requests and requests grouped under any email.
+  // Filtering parents prevents matching a similarly named folder elsewhere.
+  var matches = DriveApp.getFoldersByName(requestId);
+  while (matches.hasNext()) {
+    var candidate = matches.next();
+    var parents = candidate.getParents();
+    while (parents.hasNext()) {
+      var parent = parents.next();
+      if (parent.getId() === root.getId()) return candidate;
+      var grandparents = parent.getParents();
+      while (grandparents.hasNext()) if (grandparents.next().getId() === root.getId()) return candidate;
+    }
+  }
+  return null;
 }
 
 function ensureImageFile_(folder, image) {
@@ -202,11 +244,15 @@ function sendStoredEmail_(folderId) {
     var frontBlob = frontFile.getBlob().setName(record.images.front.name);
     var backBlob = backFile.getBlob().setName(record.images.back.name);
     var privateUrl = folder.getUrl();
+    var email = record.email || (validEmail_(record.contact) ? record.contact : '');
+    var phone = record.phone || (!email && validPhone_(record.contact) ? record.contact : '');
     var plainBody = 'Yêu cầu thiết kế Classic\nMã yêu cầu: ' + record.requestId + '\nHọ tên: ' + record.name
-      + '\nLiên hệ: ' + record.contact + '\nLời nhắn: ' + (record.note || 'Không có lời nhắn')
+      + '\nEmail: ' + (email || 'Chưa cung cấp') + '\nSố điện thoại: ' + (phone || 'Chưa cung cấp')
+      + '\nLời nhắn: ' + (record.note || 'Không có lời nhắn')
       + '\n\nHai ảnh PNG được đính kèm. Bản lưu riêng tư trên Google Drive: ' + privateUrl;
     var htmlBody = '<h2>Yêu cầu thiết kế Classic</h2><p><b>Mã yêu cầu:</b> ' + escapeHtml_(record.requestId)
-      + '</p><p><b>Họ tên:</b> ' + escapeHtml_(record.name) + '</p><p><b>Liên hệ:</b> ' + escapeHtml_(record.contact)
+      + '</p><p><b>Họ tên:</b> ' + escapeHtml_(record.name) + '</p><p><b>Email:</b> ' + escapeHtml_(email || 'Chưa cung cấp')
+      + '</p><p><b>Số điện thoại:</b> ' + escapeHtml_(phone || 'Chưa cung cấp')
       + '</p><p><b>Lời nhắn:</b><br>' + escapeHtml_(record.note || 'Không có lời nhắn').replace(/\n/g, '<br>')
       + '</p><p><a href="' + escapeHtml_(privateUrl) + '">Mở bản lưu trong Google Drive</a> (dành cho chủ tài khoản)</p>';
     var message = { to: INTAKE_RECIPIENT, subject: 'Thiết kế Classic - ' + record.name + ' [' + record.requestId + ']', body: plainBody, attachments: [frontBlob, backBlob], name: 'Khắc riêng Classic' };
@@ -218,7 +264,7 @@ function sendStoredEmail_(folderId) {
         + '<h3>Mặt sau</h3><img src="cid:backDesign" alt="Mặt sau" width="300" style="max-width:100%;height:auto">';
     }
     message.htmlBody = htmlBody;
-    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(record.contact)) message.replyTo = record.contact;
+    if (email) message.replyTo = email;
     MailApp.sendEmail(message);
     sent = true;
   } catch (_) {
@@ -249,18 +295,45 @@ function retryPendingEmails() {
   var properties = PropertiesService.getScriptProperties();
   var folderId = properties.getProperty('GOOGLE_DRIVE_FOLDER_ID');
   if (!folderId || MailApp.getRemainingDailyQuota() < 1) return;
-  var token = properties.getProperty('EMAIL_RETRY_CURSOR');
-  var folders;
-  try { folders = token ? DriveApp.continueFolderIterator(token) : DriveApp.getFolderById(folderId).getFolders(); }
-  catch (_) { folders = DriveApp.getFolderById(folderId).getFolders(); }
+  var root = DriveApp.getFolderById(folderId);
+  var state;
+  try { state = JSON.parse(properties.getProperty('EMAIL_RETRY_STATE_V2') || '{}'); } catch (_) { state = {}; }
+  var roots;
+  var requests = null;
+  try {
+    roots = state.rootDone ? null : state.rootToken ? DriveApp.continueFolderIterator(state.rootToken) : root.getFolders();
+    if (state.customerId && state.childToken) requests = DriveApp.continueFolderIterator(state.childToken);
+  } catch (_) {
+    // Continuation tokens expire. Starting another bounded pass is safe because
+    // accepted email claims and sent statuses are checked per request.
+    state = {};
+    roots = root.getFolders();
+    requests = null;
+  }
   var scanned = 0;
   var attempted = 0;
-  while (folders.hasNext() && scanned < 40 && attempted < 10) {
-    var folder = folders.next();
+  while (scanned < 40 && attempted < 10) {
+    var folder;
+    var nested = false;
+    if (requests && requests.hasNext()) {
+      folder = requests.next();
+      nested = true;
+    } else {
+      requests = null;
+      state.customerId = null;
+      if (!roots || !roots.hasNext()) break;
+      folder = roots.next();
+    }
     scanned++;
     try {
       var recordFile = firstFile_(folder, 'request.json');
-      if (!recordFile) continue;
+      if (!recordFile) {
+        if (!nested) {
+          state.customerId = folder.getId();
+          requests = folder.getFolders();
+        }
+        continue;
+      }
       var record = JSON.parse(recordFile.getBlob().getDataAsString('UTF-8'));
       if (!record.stored || record.emailStatus === 'sent') continue;
       if (record.emailStatus === 'sending' && record.emailLeaseUntil > Date.now()) continue;
@@ -270,8 +343,17 @@ function retryPendingEmails() {
       // Continue with other saved requests. No customer information is logged.
     }
   }
-  if (folders.hasNext()) properties.setProperty('EMAIL_RETRY_CURSOR', folders.getContinuationToken());
-  else properties.deleteProperty('EMAIL_RETRY_CURSOR');
+  var rootRemaining = roots && roots.hasNext();
+  var childRemaining = requests && requests.hasNext();
+  if (rootRemaining || childRemaining) {
+    properties.setProperty('EMAIL_RETRY_STATE_V2', JSON.stringify({
+      rootDone: !rootRemaining,
+      rootToken: rootRemaining ? roots.getContinuationToken() : null,
+      customerId: childRemaining ? state.customerId : null,
+      childToken: childRemaining ? requests.getContinuationToken() : null
+    }));
+  } else properties.deleteProperty('EMAIL_RETRY_STATE_V2');
+  properties.deleteProperty('EMAIL_RETRY_CURSOR');
 }
 
 function escapeHtml_(value) {

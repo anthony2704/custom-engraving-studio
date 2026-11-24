@@ -39,6 +39,18 @@ function textField(value, limit, required = false) {
   return result;
 }
 
+function customerEmail(value) {
+  const email = textField(value, 200).toLowerCase();
+  if (email && !/^[^\s@/\\]+@[^\s@/\\]+\.[^\s@/\\]+$/.test(email)) throw new Error('INVALID_REQUEST');
+  return email;
+}
+
+function customerPhone(value) {
+  const phone = textField(value, 30);
+  if (phone && (!/^\+?[0-9 ().-]+$/.test(phone) || phone.replace(/\D/g, '').length < 7 || phone.replace(/\D/g, '').length > 15)) throw new Error('INVALID_REQUEST');
+  return phone;
+}
+
 function pngImage(value) {
   if (typeof value !== 'string' || !value.startsWith('data:image/png;base64,')) throw new Error('INVALID_IMAGES');
   const base64 = value.slice(22);
@@ -70,10 +82,17 @@ export async function onRequestPost({ request, env }) {
   try {
     const data = await readBody(request);
     if (!data || typeof data !== 'object' || typeof data.requestId !== 'string' || !REQUEST_ID.test(data.requestId)) throw new Error('INVALID_REQUEST');
+    const contact = textField(data.contact || data.email, 200, true);
+    const email = customerEmail(data.email === undefined ? (contact.includes('@') ? contact : '') : data.email);
+    if (data.email !== undefined && !email) throw new Error('INVALID_REQUEST');
+    const phone = customerPhone(data.phone || '');
+    const customerNote = textField(data.note || '', 3000);
+    const legacyPhoneNote = phone ? `\n\nSố điện thoại: ${phone}` : '';
     payload = {
       secret: env.DESIGN_INTAKE_SECRET, requestId: data.requestId,
-      name: textField(data.name, 120, true), contact: textField(data.contact, 200, true),
-      note: textField(data.note || '', 3000), product: 'Classic',
+      name: textField(data.name, 120, true), contact, email, phone, customerNote,
+      // Deployed v1 scripts only understand note; retain the phone during upgrade.
+      note: customerNote.slice(0, 3000 - legacyPhoneNote.length) + legacyPhoneNote, product: 'Classic',
       designs: { front: pngImage(data.designs?.front), back: pngImage(data.designs?.back) }
     };
     if (/[\r\n]/.test(payload.name + payload.contact)) throw new Error('INVALID_REQUEST');

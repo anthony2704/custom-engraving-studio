@@ -78,6 +78,90 @@ await check('Chrome same-origin POST headers accepted; only server secret forwar
   });
 });
 
+await check('email and phone reach Google with the original note and a legacy phone note', async () => {
+  await withProxyFetch(async (_url, options) => {
+    const forwarded = JSON.parse(options.body);
+    assert.equal(forwarded.email, 'customer@example.com');
+    assert.equal(forwarded.phone, '+84 (912) 345-678');
+    assert.equal(forwarded.customerNote, 'Khắc cả hai mặt');
+    assert.equal(forwarded.note, 'Khắc cả hai mặt\n\nSố điện thoại: +84 (912) 345-678');
+    return Response.json(goodResult());
+  }, async () => {
+    const response = await proxy.onRequestPost(context({ ...payload, requestId, email: ' Customer@EXAMPLE.COM ', phone: ' +84 (912) 345-678 ', note: 'Khắc cả hai mặt' }));
+    assert.equal(response.status, 200);
+  });
+});
+
+await check('3000-character note is retained separately while legacy note stays capped and includes phone', async () => {
+  const originalNote = 'a'.repeat(3000);
+  await withProxyFetch(async (_url, options) => {
+    const forwarded = JSON.parse(options.body);
+    assert.equal(forwarded.customerNote, originalNote);
+    assert.equal(forwarded.customerNote.length, 3000);
+    assert.equal(forwarded.note.length, 3000);
+    assert.ok(forwarded.note.endsWith('\n\nSố điện thoại: 0912 345 678'));
+    return Response.json(goodResult());
+  }, async () => {
+    assert.equal((await proxy.onRequestPost(context({ ...payload, requestId, email: 'customer@example.com', phone: '0912 345 678', note: originalNote }))).status, 200);
+  });
+});
+
+for (const [label, fields] of [
+  ['non-email input', { email: 'invalid-email' }],
+  ['empty explicit email', { email: '' }],
+  ['email with control characters', { email: 'customer@example.com\nCc:other@example.com' }],
+  ['email with slash', { email: 'customer/path@example.com' }],
+  ['phone with letters', { email: 'customer@example.com', phone: '0912abcdef' }],
+  ['phone with too few digits', { email: 'customer@example.com', phone: '123456' }],
+  ['phone with too many digits', { email: 'customer@example.com', phone: '1234567890123456' }],
+  ['phone with newline', { email: 'customer@example.com', phone: '0912\n345678' }],
+  ['note over 3000 characters', { note: 'a'.repeat(3001) }],
+]) {
+  await check(`invalid ${label} rejected before reaching Google`, async () => {
+    await withProxyFetch(() => { throw new Error('Unexpected upstream call'); }, async () => {
+      const response = await proxy.onRequestPost(context({ ...payload, requestId, ...fields }));
+      assert.equal(response.status, 400);
+      assert.equal((await response.json()).success, false);
+    });
+  });
+}
+
+for (const [label, fields, expectedEmail] of [
+  ['optional phone absent', { email: 'Customer@Example.COM' }, 'customer@example.com'],
+  ['optional phone empty', { email: 'customer@example.com', phone: '' }, 'customer@example.com'],
+  ['legacy email contact only', {}, 'customer@example.com'],
+  ['legacy phone contact only', { contact: '0912 345 678' }, ''],
+]) {
+  await check(`${label} remains accepted`, async () => {
+    await withProxyFetch(async (_url, options) => {
+      const forwarded = JSON.parse(options.body);
+      assert.equal(forwarded.email, expectedEmail);
+      assert.equal(forwarded.phone, '');
+      assert.equal(forwarded.note, '');
+      return Response.json(goodResult());
+    }, async () => {
+      assert.equal((await proxy.onRequestPost(context({ ...payload, requestId, ...fields }))).status, 200);
+    });
+  });
+}
+
+await check('phone HTML pattern compiles with browser v flag and accepts supported number formats', async () => {
+  const html = await readFile(new URL('index.html', root), 'utf8');
+  const phoneInput = html.match(/<input\b[^>]*\bname="phone"[^>]*>/)?.[0];
+  assert.ok(phoneInput, 'Missing phone input');
+  assert.match(phoneInput, /type="tel"/);
+  assert.match(phoneInput, /autocomplete="tel"/);
+  const pattern = phoneInput.match(/\bpattern="([^"]+)"/)?.[1];
+  assert.ok(pattern, 'Missing phone pattern');
+  const regex = new RegExp(`^(?:${pattern})$`, 'v');
+  for (const number of ['0912345678', '0912 345 678', '+84 (912) 345-678', '1234567', '123456789012345']) {
+    assert.equal(regex.test(number), true, `Rejected supported phone ${number}`);
+  }
+  for (const number of ['123456', '1234567890123456', 'phone', '0912abc678', '++84912345678', '0912\n345678']) {
+    assert.equal(regex.test(number), false, `Accepted invalid phone ${number}`);
+  }
+});
+
 for (const [name, upstream] of [
   ['Google HTTP 200 success:false', { success: false, code: 'FAILED' }],
   ['Google HTTP 200 success string', goodResult(requestId, { success: 'true' })],

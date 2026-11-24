@@ -767,6 +767,7 @@
       const [frontDesign, backDesign] = await Promise.all([exportFace('front'), exportFace('back')]);
       const payload = {
         name:String(formData.get('name') || '').trim(), contact:String(formData.get('contact') || '').trim(),
+        email:String(formData.get('contact') || '').trim().toLowerCase(), phone:String(formData.get('phone') || '').trim(),
         note:String(formData.get('note') || '').trim(), product:'Classic',
         designs:{ front:frontDesign.dataUrl, back:backDesign.dataUrl }
       };
