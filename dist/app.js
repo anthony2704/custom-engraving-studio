@@ -579,45 +579,69 @@
     const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = name;
     document.body.appendChild(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 3000);
   }
-  function submitFormSubmitRequest(payload, frontBlob, backBlob) {
+  async function combineDesignBlobs(frontBlob, backBlob) {
+    const loadImage = (blob) => new Promise((resolve, reject) => {
+      const image = new Image(); const objectUrl = URL.createObjectURL(blob);
+      image.onload = () => { URL.revokeObjectURL(objectUrl); resolve(image); };
+      image.onerror = () => { URL.revokeObjectURL(objectUrl); reject(new Error('Could not prepare the combined design image.')); };
+      image.src = objectUrl;
+    });
+    const [frontImage, backImage] = await Promise.all([loadImage(frontBlob), loadImage(backBlob)]);
+    const output = document.createElement('canvas'); output.width = W * 2 + 24; output.height = H + 68;
+    const context = output.getContext('2d');
+    if (!context) throw new Error('Could not create the combined design image.');
+    context.fillStyle = '#ffffff'; context.fillRect(0, 0, output.width, output.height);
+    context.fillStyle = '#34414c'; context.font = '600 26px Arial, sans-serif'; context.textAlign = 'center'; context.textBaseline = 'middle';
+    context.fillText('Mặt trước', W / 2, 34); context.fillText('Mặt sau', W + 24 + W / 2, 34);
+    context.drawImage(frontImage, 0, 68, W, H); context.drawImage(backImage, W + 24, 68, W, H);
+    return new Promise((resolve, reject) => output.toBlob((blob) => blob ? resolve(blob) : reject(new Error('Could not export the combined design image.')), 'image/png'));
+  }
+  function submitFormSubmitRequest(form, payload, attachmentBlob) {
     return new Promise((resolve, reject) => {
       const requestId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
       const targetName = `design-submit-${requestId.replace(/[^a-z0-9]/gi, '')}`;
       const frame = document.createElement('iframe');
       frame.name = targetName; frame.hidden = true; frame.title = 'Gửi yêu cầu thiết kế'; frame.tabIndex = -1;
-      const emailForm = document.createElement('form');
-      emailForm.action = SUBMISSION_ENDPOINT; emailForm.method = 'POST'; emailForm.enctype = 'multipart/form-data';
-      emailForm.target = targetName; emailForm.hidden = true;
+      const originalAttributes = ['action', 'method', 'enctype', 'target'].map((name) => [name, form.getAttribute(name)]);
+      const temporaryFields = [];
 
       const addField = (name, value) => {
         const input = document.createElement('input'); input.type = 'hidden'; input.name = name; input.value = value;
-        emailForm.append(input);
+        input.dataset.formsubmitTemporary = 'true'; form.append(input); temporaryFields.push(input);
       };
       const addFile = (name, blob, filename) => {
         if (!blob || typeof DataTransfer === 'undefined') throw new Error('This browser cannot attach the exported PNG images.');
-        const input = document.createElement('input'); input.type = 'file'; input.name = name; input.hidden = true;
+        const input = document.createElement('input'); input.type = 'file'; input.name = name; input.tabIndex = -1; input.setAttribute('aria-hidden', 'true');
+        input.style.cssText = 'position:fixed;left:-10000px;width:1px;height:1px;opacity:0;pointer-events:none';
+        form.append(input); temporaryFields.push(input);
         const transfer = new DataTransfer(); transfer.items.add(new File([blob], filename, { type: 'image/png' }));
-        input.files = transfer.files; emailForm.append(input);
+        input.files = transfer.files;
       };
 
-      addField('name', payload.name);
-      addField('contact', payload.contact);
-      addField('product', payload.product);
-      addField('note', payload.note || 'Không có lời nhắn');
-      addField('_subject', `Yêu cầu thiết kế Classic - ${payload.name}`);
-      addField('_template', 'table');
-      addField('_url', window.location.href);
-      const nextUrl = new URL('/submit-complete.html', window.location.origin);
-      nextUrl.searchParams.set('request', requestId);
-      addField('_next', nextUrl.href);
-      addFile('attachment', frontBlob, 'thiet-ke-mat-truoc.png');
-      addFile('attachment', backBlob, 'thiet-ke-mat-sau.png');
+      try {
+        addField('email', payload.contact.includes('@') ? payload.contact : '');
+        addField('product', payload.product);
+        addField('_subject', `Yêu cầu thiết kế Classic - ${payload.name}`);
+        addField('_template', 'table');
+        addField('_url', window.location.href);
+        const nextUrl = new URL('/submit-complete.html', window.location.origin);
+        nextUrl.searchParams.set('request', requestId);
+        addField('_next', nextUrl.href);
+        addFile('attachment', attachmentBlob, 'thiet-ke-classic-hai-mat.png');
+        const attachedFile = new FormData(form).get('attachment');
+        if (!(attachedFile instanceof File) || attachedFile.size !== attachmentBlob.size) throw new Error('The exported design file could not be added to the form.');
+      } catch (error) {
+        temporaryFields.forEach((field) => field.remove());
+        throw error;
+      }
 
       let timeoutId;
       const finish = (error) => {
         window.removeEventListener('message', onMessage);
         clearTimeout(timeoutId);
-        emailForm.remove(); frame.remove();
+        temporaryFields.forEach((field) => field.remove());
+        originalAttributes.forEach(([name, value]) => value === null ? form.removeAttribute(name) : form.setAttribute(name, value));
+        frame.remove();
         error ? reject(error) : resolve();
       };
       const onMessage = (event) => {
@@ -625,9 +649,10 @@
         if (event.data?.type === 'classic-design-submitted' && event.data.request === requestId) finish();
       };
       window.addEventListener('message', onMessage);
-      document.body.append(frame, emailForm);
+      form.action = SUBMISSION_ENDPOINT; form.method = 'POST'; form.enctype = 'multipart/form-data'; form.target = targetName;
+      document.body.append(frame);
       timeoutId = setTimeout(() => finish(new Error('FormSubmit did not confirm the submission redirect.')), 45000);
-      emailForm.submit();
+      try { form.submit(); } catch (error) { finish(error); }
     });
   }
   async function openPreview() {
@@ -686,8 +711,9 @@
       }
       if (/^https:\/\/formsubmit\.co\//i.test(SUBMISSION_ENDPOINT)) {
         if (!frontDesign.blob || !backDesign.blob) throw new Error('Could not export design images');
-        if (frontDesign.blob.size + backDesign.blob.size > 10 * 1024 * 1024) throw new Error('Design images exceed the 10 MB attachment limit');
-        await submitFormSubmitRequest(payload, frontDesign.blob, backDesign.blob);
+        const combinedDesign = await combineDesignBlobs(frontDesign.blob, backDesign.blob);
+        if (combinedDesign.size > 10 * 1024 * 1024) throw new Error('Design images exceed the 10 MB attachment limit');
+        await submitFormSubmitRequest(form, payload, combinedDesign);
       } else {
         const response = await fetch(SUBMISSION_ENDPOINT, { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify(payload) });
         const responseData = await response.json().catch(() => null);
@@ -699,7 +725,7 @@
     } catch (error) {
       feedback.textContent = error.message.includes('10 MB')
         ? 'Ảnh thiết kế vượt giới hạn đính kèm 10 MB. Vui lòng chỉnh sửa rồi thử gửi lại.'
-        : 'Chưa nhận được xác nhận gửi. Nếu đây là lần đầu, chủ cửa hàng cần xác minh email FormSubmit. Bạn có thể tải PNG hai mặt để gửi thủ công.';
+        : 'Chưa xác nhận được yêu cầu gửi. Bạn có thể tải ảnh PNG hai mặt để gửi thủ công hoặc thử lại sau.';
       document.querySelector('#manualExport').hidden = false;
       console.error('Design submission failed', error);
     } finally {

@@ -4,7 +4,7 @@ Buildless static product customizer for the Classic brushed-gold lighter, with s
 
 ## Receiving customer designs
 
-Set `submissionEndpoint` in `config.js` to an HTTPS endpoint. FormSubmit uses its native multipart form endpoint so the front and back PNGs can be attached separately. Other same-origin or CORS-enabled endpoints receive a JSON `POST` with:
+Set `submissionEndpoint` in `config.js` to an HTTPS endpoint. FormSubmit uses its native multipart form endpoint and receives one combined PNG showing both product faces. Other same-origin or CORS-enabled endpoints receive a JSON `POST` with:
 
 - `name`, `contact`, `note`, and `product`
 - `designs.front` and `designs.back`, each a PNG data URL
