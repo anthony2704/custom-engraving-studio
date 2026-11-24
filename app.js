@@ -712,10 +712,12 @@
       }
 
       let timeoutId;
+      let responseTimer;
       const finish = (error) => {
         window.removeEventListener('message', onMessage);
         frame.removeEventListener('load', onFrameLoad);
         clearTimeout(timeoutId);
+        clearTimeout(responseTimer);
         temporaryFields.forEach((field) => field.remove());
         originalAttributes.forEach(([name, value]) => value === null ? form.removeAttribute(name) : form.setAttribute(name, value));
         frame.remove();
@@ -733,7 +735,20 @@
           try { form.submit(); } catch (error) { finish(error); }
           return;
         }
-        finish();
+        try {
+          const responseUrl = new URL(frame.contentWindow.location.href);
+          if (responseUrl.origin === window.location.origin) {
+            const isExpectedConfirmation = responseUrl.pathname === '/submit-complete.html'
+              && responseUrl.searchParams.get('request') === requestId;
+            if (isExpectedConfirmation) finish();
+            else finish(new Error('FormSubmit did not confirm the submission.'));
+            return;
+          }
+        } catch (_) {
+          // A cross-origin response cannot confirm that the form was accepted.
+        }
+        clearTimeout(responseTimer);
+        responseTimer = setTimeout(() => finish(new Error('FormSubmit did not confirm the submission.')), 10000);
       };
       window.addEventListener('message', onMessage);
       frame.addEventListener('load', onFrameLoad);
@@ -801,13 +816,13 @@
         const responseData = await response.json().catch(() => null);
         if (!response.ok || responseData?.success === false || responseData?.success === 'false') throw new Error(`Submission failed (${response.status})`);
       }
-      feedback.textContent = 'Đã gửi thiết kế thành công. Cửa hàng sẽ liên hệ lại với bạn.';
+      feedback.textContent = 'FormSubmit đã nhận yêu cầu. Vui lòng kiểm tra hộp thư đến hoặc mục Spam.';
       feedback.classList.add('is-success'); document.querySelector('#manualExport').hidden = true;
       form.reset(); showToast('Đã gửi thiết kế thành công.');
     } catch (error) {
       feedback.textContent = error.message.includes('10 MB')
         ? 'Ảnh thiết kế vượt giới hạn đính kèm 10 MB. Vui lòng chỉnh sửa rồi thử gửi lại.'
-        : 'Chưa xác nhận được yêu cầu gửi. Bạn có thể tải ảnh PNG hai mặt để gửi thủ công hoặc thử lại sau.';
+        : 'Chưa xác nhận được FormSubmit đã nhận yêu cầu. Hãy kiểm tra email kích hoạt (nếu đây là lần đầu) và mục Spam; bạn cũng có thể tải ZIP hai mặt để gửi thủ công.';
       document.querySelector('#manualExport').hidden = false;
       console.error('Design submission failed', error);
     } finally {
