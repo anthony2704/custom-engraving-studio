@@ -577,7 +577,76 @@
   function downloadBlob(blob, name) {
     if (!blob) return;
     const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = name;
-    document.body.appendChild(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 3000);
+    document.body.appendChild(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 30000);
+  }
+  function renderFaceDataUrl(face) {
+    const exportCanvas = document.createElement('canvas'); exportCanvas.width = W; exportCanvas.height = H;
+    const context = exportCanvas.getContext('2d');
+    if (!context) throw new Error('Could not create the design image.');
+    productBase(context, face, false); drawItems(context, face, null);
+    return exportCanvas.toDataURL('image/png');
+  }
+  function dataUrlBytes(dataUrl) {
+    const binary = atob(dataUrl.slice(dataUrl.indexOf(',') + 1));
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+  }
+  function crc32(bytes) {
+    const table = new Uint32Array(256);
+    for (let n = 0; n < 256; n += 1) {
+      let value = n;
+      for (let bit = 0; bit < 8; bit += 1) value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
+      table[n] = value >>> 0;
+    }
+    let checksum = 0xffffffff;
+    for (const byte of bytes) checksum = table[(checksum ^ byte) & 0xff] ^ (checksum >>> 8);
+    return (checksum ^ 0xffffffff) >>> 0;
+  }
+  function createStoredZip(entries) {
+    const encoder = new TextEncoder(); const localParts = []; const centralParts = [];
+    let localOffset = 0;
+    entries.forEach(({ name, bytes }) => {
+      const filename = encoder.encode(name); const checksum = crc32(bytes);
+      const localHeader = new Uint8Array(30 + filename.length); const localView = new DataView(localHeader.buffer);
+      localView.setUint32(0, 0x04034b50, true); localView.setUint16(4, 20, true); localView.setUint16(6, 0x0800, true);
+      localView.setUint16(8, 0, true); localView.setUint16(10, 0, true); localView.setUint16(12, 0x21, true);
+      localView.setUint32(14, checksum, true); localView.setUint32(18, bytes.length, true); localView.setUint32(22, bytes.length, true);
+      localView.setUint16(26, filename.length, true); localView.setUint16(28, 0, true); localHeader.set(filename, 30);
+      localParts.push(localHeader, bytes);
+
+      const centralHeader = new Uint8Array(46 + filename.length); const centralView = new DataView(centralHeader.buffer);
+      centralView.setUint32(0, 0x02014b50, true); centralView.setUint16(4, 20, true); centralView.setUint16(6, 20, true);
+      centralView.setUint16(8, 0x0800, true); centralView.setUint16(10, 0, true); centralView.setUint16(12, 0, true);
+      centralView.setUint16(14, 0x21, true); centralView.setUint32(16, checksum, true);
+      centralView.setUint32(20, bytes.length, true); centralView.setUint32(24, bytes.length, true);
+      centralView.setUint16(28, filename.length, true); centralView.setUint16(30, 0, true); centralView.setUint16(32, 0, true);
+      centralView.setUint16(34, 0, true); centralView.setUint16(36, 0, true); centralView.setUint32(38, 0, true);
+      centralView.setUint32(42, localOffset, true); centralHeader.set(filename, 46); centralParts.push(centralHeader);
+      localOffset += localHeader.length + bytes.length;
+    });
+    const centralOffset = localOffset; const centralSize = centralParts.reduce((total, part) => total + part.length, 0);
+    const endRecord = new Uint8Array(22); const endView = new DataView(endRecord.buffer);
+    endView.setUint32(0, 0x06054b50, true); endView.setUint16(4, 0, true); endView.setUint16(6, 0, true);
+    endView.setUint16(8, entries.length, true); endView.setUint16(10, entries.length, true);
+    endView.setUint32(12, centralSize, true); endView.setUint32(16, centralOffset, true); endView.setUint16(20, 0, true);
+    return new Blob([...localParts, ...centralParts, endRecord], { type: 'application/zip' });
+  }
+  async function downloadBothFaces() {
+    try {
+      await Promise.all([ensureImages('front'), ensureImages('back')]);
+      const front = dataUrlBytes(renderFaceDataUrl('front'));
+      const back = dataUrlBytes(renderFaceDataUrl('back'));
+      const archive = createStoredZip([
+        { name: 'thiet-ke-mat-truoc.png', bytes: front },
+        { name: 'thiet-ke-mat-sau.png', bytes: back }
+      ]);
+      downloadBlob(archive, 'thiet-ke-classic-hai-mat.zip');
+      showToast('Đang tải file ZIP gồm hai ảnh PNG.');
+    } catch (error) {
+      console.error('Could not download both design faces', error);
+      showToast('Không tạo được file tải xuống. Vui lòng thử lại.');
+    }
   }
   async function combineDesignBlobs(frontBlob, backBlob) {
     const loadImage = (blob) => new Promise((resolve, reject) => {
@@ -638,6 +707,7 @@
       let timeoutId;
       const finish = (error) => {
         window.removeEventListener('message', onMessage);
+        frame.removeEventListener('load', onFrameLoad);
         clearTimeout(timeoutId);
         temporaryFields.forEach((field) => field.remove());
         originalAttributes.forEach(([name, value]) => value === null ? form.removeAttribute(name) : form.setAttribute(name, value));
@@ -648,11 +718,20 @@
         if (event.origin !== window.location.origin || event.source !== frame.contentWindow) return;
         if (event.data?.type === 'classic-design-submitted' && event.data.request === requestId) finish();
       };
+      let firstFrameLoad = true;
+      const onFrameLoad = () => {
+        if (firstFrameLoad) {
+          firstFrameLoad = false;
+          timeoutId = setTimeout(() => finish(new Error('FormSubmit did not respond to the submission.')), 45000);
+          try { form.submit(); } catch (error) { finish(error); }
+          return;
+        }
+        finish();
+      };
       window.addEventListener('message', onMessage);
+      frame.addEventListener('load', onFrameLoad);
       form.action = SUBMISSION_ENDPOINT; form.method = 'POST'; form.enctype = 'multipart/form-data'; form.target = targetName;
       document.body.append(frame);
-      timeoutId = setTimeout(() => finish(new Error('FormSubmit did not confirm the submission redirect.')), 45000);
-      try { form.submit(); } catch (error) { finish(error); }
     });
   }
   async function openPreview() {
@@ -660,7 +739,7 @@
     area.innerHTML = '<p class="panel-description">Đang tạo ảnh xem trước…</p>'; modal.hidden = false;
     const [front, back] = await Promise.all([exportFace('front'), exportFace('back')]);
     area.innerHTML = `<div class="preview-face"><img alt="Thiết kế mặt trước" src="${front.dataUrl}" /><strong>Mặt trước</strong></div><div class="preview-face"><img alt="Thiết kế mặt sau" src="${back.dataUrl}" /><strong>Mặt sau</strong></div>`;
-    document.querySelector('#downloadDesign').onclick = () => { downloadBlob(front.blob, 'thiet-ke-mat-truoc.png'); setTimeout(() => downloadBlob(back.blob, 'thiet-ke-mat-sau.png'), 250); showToast('Đang tải ảnh thiết kế PNG.'); };
+    document.querySelector('#downloadDesign').onclick = downloadBothFaces;
   }
   function openSubmit() {
     document.querySelector('#submitModal').hidden = false;
@@ -671,14 +750,10 @@
   document.querySelectorAll('.modal-backdrop').forEach((backdrop) => backdrop.addEventListener('click', (event) => { if (event.target === backdrop) backdrop.hidden = true; }));
   document.addEventListener('keydown', (event) => { if (event.key === 'Escape') document.querySelectorAll('.modal-backdrop').forEach((modal) => { modal.hidden = true; }); });
   document.querySelector('#openPreview').addEventListener('click', openPreview);
+  document.querySelector('#downloadFaces').addEventListener('click', downloadBothFaces);
   document.querySelector('#openSubmit').addEventListener('click', openSubmit);
   document.querySelector('#previewSubmit').addEventListener('click', () => { document.querySelector('#previewModal').hidden = true; openSubmit(); });
-  document.querySelector('#manualExport').addEventListener('click', async () => {
-    const [front, back] = await Promise.all([exportFace('front'), exportFace('back')]);
-    downloadBlob(front.blob, 'thiet-ke-mat-truoc.png');
-    setTimeout(() => downloadBlob(back.blob, 'thiet-ke-mat-sau.png'), 250);
-    showToast('Đang tải ảnh PNG của hai mặt sản phẩm.');
-  });
+  document.querySelector('#manualExport').addEventListener('click', downloadBothFaces);
   document.querySelector('#undoButton').addEventListener('click', undo);
   document.querySelector('#redoButton').addEventListener('click', redo);
   document.querySelector('#zoomIn').addEventListener('click', () => { state.zoom = Math.min(1.18, state.zoom + .06); renderAll(); });

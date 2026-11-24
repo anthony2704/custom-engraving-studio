@@ -12,3 +12,5 @@ Set `submissionEndpoint` in `config.js` to an HTTPS endpoint. FormSubmit uses it
 The JSON endpoint should send the images to the shop by email or save the files to the shop's Drive, then return a successful 2xx response. Keep email-provider credentials and Drive authorization on the server. FormSubmit uses a same-origin completion page to confirm its redirect. With no endpoint configured, or if delivery cannot be confirmed, the form offers the customer a two-image PNG download.
 
 The editor supports text, preset vector artwork, basic geometric shapes, uploaded PNG/JPG/WEBP/SVG files, front/back views, drag positioning, size and color adjustments, undo/redo, and an IndexedDB draft on the current browser.
+
+Customers can download both faces together as a ZIP containing separate front and back PNG files.
