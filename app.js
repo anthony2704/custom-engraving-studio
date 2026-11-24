@@ -216,11 +216,11 @@
   function textMetrics(context, item) {
     const size = item.size || state.textSize;
     const weight = item.bold || item.effect === 'bold' ? 700 : 500;
-    const italic = item.italic || item.effect === 'italic' ? 'italic ' : '';
-    context.save(); context.font = `${italic}${weight} ${size}px ${fontStack(item.font || state.textFont)}`;
+    const italic = item.italic || item.effect === 'italic';
+    context.save(); context.font = `${weight} ${size}px ${fontStack(item.font || state.textFont)}`;
     const lines = String(item.text || '').split('\n');
     const spacing = Number(item.letterSpacing || 0) + (item.effect === 'spacing' ? 5 : 0);
-    const width = Math.min(SAFE.w * .92, Math.max(...lines.map((line) => context.measureText(line || ' ').width + Math.max(0, [...line].length - 1) * spacing), size));
+    const width = Math.min(SAFE.w * .92, Math.max(...lines.map((line) => context.measureText(line || ' ').width + Math.max(0, [...line].length - 1) * spacing + (italic ? size * .22 : 0)), size));
     context.restore();
     return { width, height: Math.max(1, lines.length) * size * 1.34 };
   }  function itemBounds(context, item) {
@@ -254,14 +254,16 @@
       if (item.type === 'text') {
         const size = item.size || state.textSize;
         const weight = item.bold || item.effect === 'bold' ? 700 : 500;
-        const italic = item.italic || item.effect === 'italic' ? 'italic ' : '';
+        const italic = item.italic || item.effect === 'italic';
         const lines = String(item.text || '').split('\n');
         context.save(); context.fillStyle = item.color || PALETTE[0]; context.strokeStyle = item.color || PALETTE[0];
-        context.textAlign = 'left'; context.textBaseline = 'middle'; context.font = `${italic}${weight} ${size}px ${fontStack(item.font || state.textFont)}`;
+        context.textAlign = 'left'; context.textBaseline = 'middle'; context.font = `${weight} ${size}px ${fontStack(item.font || state.textFont)}`;
         if (item.effect === 'shadow') { context.shadowColor = 'rgba(0,0,0,.36)'; context.shadowBlur = size * .08; context.shadowOffsetY = size * .06; }
         const lineHeight = size * 1.25; const startY = box.centerY - ((lines.length - 1) * lineHeight) / 2;
         lines.forEach((line, index) => {
           const y = startY + index * lineHeight;
+          context.save();
+          if (italic) { context.translate(box.centerX, y); context.transform(1, 0, -.25, 1, 0, 0); context.translate(-box.centerX, -y); }
           if (item.effect === 'outline') { context.lineWidth = Math.max(2, size * .04); drawTextLine(context, item, line, box.centerX, y, SAFE.w * .91, 'strokeText'); }
           else drawTextLine(context, item, line, box.centerX, y, SAFE.w * .91, 'fillText');
           if (item.underline) {
@@ -270,6 +272,7 @@
             const startX = align === 'left' ? box.centerX : align === 'right' ? box.centerX - width : box.centerX - width / 2;
             context.beginPath(); context.lineWidth = Math.max(2, size * .025); context.moveTo(startX, y + size * .48); context.lineTo(startX + width, y + size * .48); context.stroke();
           }
+          context.restore();
         });
         context.restore();
       } else {
