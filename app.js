@@ -184,11 +184,12 @@
     }
     context.restore();
     context.save();
-    context.strokeStyle = 'rgba(255,248,224,.75)'; context.lineWidth = 2;
+    context.strokeStyle = 'rgba(255,248,224,.72)'; context.lineWidth = 2;
     roundedRect(context, 51, 38, 798, 1275, 53); context.stroke();
-    context.strokeStyle = 'rgba(47,31,16,.9)'; context.lineWidth = 5;
-    if (face === 'front') { context.beginPath(); context.moveTo(73, 112); context.quadraticCurveTo(74, 60, 128, 55); context.lineTo(774, 55); context.stroke(); context.beginPath(); context.moveTo(73, 112); context.lineTo(73, 1237); context.quadraticCurveTo(74, 1285, 119, 1287); context.stroke(); }
-    else { context.beginPath(); context.moveTo(127, 55); context.lineTo(774, 55); context.quadraticCurveTo(826, 60, 827, 112); context.stroke(); context.beginPath(); context.moveTo(827, 112); context.lineTo(827, 1237); context.quadraticCurveTo(826, 1285, 780, 1287); context.stroke(); }
+    context.strokeStyle = 'rgba(54,36,19,.78)'; context.lineWidth = 4;
+    roundedRect(context, 63, 50, 774, 1251, 47); context.stroke();
+    context.strokeStyle = 'rgba(255,238,202,.38)'; context.lineWidth = 1.5;
+    roundedRect(context, 69, 56, 762, 1239, 42); context.stroke();
     context.strokeStyle = 'rgba(32,23,13,.95)'; context.lineWidth = 8; context.beginPath(); context.moveTo(47, 529); context.lineTo(853, 529); context.stroke();
     context.strokeStyle = 'rgba(255,243,215,.72)'; context.lineWidth = 2; context.beginPath(); context.moveTo(50, 534); context.lineTo(850, 534); context.stroke();
     context.strokeStyle = 'rgba(116,78,39,.45)'; context.lineWidth = 1; context.beginPath(); context.moveTo(55, 543); context.lineTo(845, 543); context.stroke();
