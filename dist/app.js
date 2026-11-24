@@ -5,16 +5,16 @@
   // Expected POST JSON: { name, contact, note, product, designs: { front: dataURL, back: dataURL } }.
   const SUBMISSION_ENDPOINT = window.CUSTOMIZER_CONFIG?.submissionEndpoint || '';
   const W = 900;
-  const H = 1460;
-  const SAFE = { x: 184, y: 157, w: 532, h: 1147 };
+  const H = 1350;
+  const SAFE = { x: 74, y: 74, w: 752, h: 1197 };
   const FINISHES = {
-    navy: { label: 'Navy matte', left: '#07121d', mid: '#153c61', right: '#08213c', edge: '#03080d' },
+    classic: { label: 'Classic vàng xước', left: '#bd8c52', mid: '#f2d9a8', right: '#d2a36a', edge: '#704822' },
     black: { label: 'Đen matte', left: '#101418', mid: '#303a41', right: '#151c22', edge: '#050709' },
     silver: { label: 'Bạc xước', left: '#636c72', mid: '#d1d5d6', right: '#777f83', edge: '#343b40' }
   };
-  const PALETTE = ['#e8e2d7', '#f8f8f5', '#1f2830', '#ad3832', '#b99359'];
+  const PALETTE = ['#34271b', '#161616', '#fffaf0', '#963b32', '#344d60'];
   const state = {
-    face: 'front', tab: 'design', finish: 'navy', zoom: 1,
+    face: 'front', tab: 'design', finish: 'classic', zoom: 1, addMenuOpen: false,
     selectedId: null, dragging: null,
     faces: { front: [], back: [] },
     undo: [], redo: []
@@ -75,7 +75,7 @@
   function restoreSnapshot(serialized) {
     const snapshot = JSON.parse(serialized);
     state.faces = snapshot.faces;
-    state.finish = snapshot.finish || 'navy';
+    state.finish = snapshot.finish === 'navy' ? 'classic' : (snapshot.finish || 'classic');
     const current = state.faces[state.face];
     state.selectedId = current.length ? current[current.length - 1].id : null;
     renderAll();
@@ -141,37 +141,50 @@
   }
 
   function productBase(context, face, withGuides) {
-    const finish = FINISHES[state.finish] || FINISHES.navy;
+    const finish = FINISHES[state.finish] || FINISHES.classic;
     context.clearRect(0, 0, W, H);
     context.save();
-    context.shadowColor = 'rgba(4, 13, 22, .30)'; context.shadowBlur = 45; context.shadowOffsetX = 0; context.shadowOffsetY = 26;
-    roundedRect(context, 119, 70, 662, 1320, 66);
-    const body = context.createLinearGradient(114, 0, 785, 0);
-    body.addColorStop(0, finish.edge); body.addColorStop(.07, finish.left); body.addColorStop(.36, finish.mid);
-    body.addColorStop(.61, finish.mid); body.addColorStop(.95, finish.right); body.addColorStop(1, finish.edge);
+    context.shadowColor = 'rgba(42, 28, 12, .25)'; context.shadowBlur = 42; context.shadowOffsetX = 0; context.shadowOffsetY = 22;
+    roundedRect(context, 42, 30, 816, 1290, 59);
+    const body = context.createLinearGradient(40, 0, 860, 0);
+    body.addColorStop(0, finish.edge); body.addColorStop(.035, finish.left); body.addColorStop(.20, finish.mid);
+    body.addColorStop(.53, finish.mid); body.addColorStop(.83, finish.right); body.addColorStop(.97, finish.left); body.addColorStop(1, finish.edge);
     context.fillStyle = body; context.fill(); context.restore();
-    context.save(); roundedRect(context, 131, 83, 638, 1294, 54); context.clip();
-    const sheen = context.createLinearGradient(130, 0, 770, 0);
-    sheen.addColorStop(0, 'rgba(255,255,255,.12)'); sheen.addColorStop(.06, 'rgba(255,255,255,.035)');
-    sheen.addColorStop(.21, 'rgba(255,255,255,0)'); sheen.addColorStop(.82, 'rgba(255,255,255,0)'); sheen.addColorStop(1, 'rgba(255,255,255,.06)');
-    context.fillStyle = sheen; context.fillRect(130, 80, 640, 1300);
-    const topTint = context.createLinearGradient(0, 100, 0, 570);
-    topTint.addColorStop(0, 'rgba(255,255,255,.035)'); topTint.addColorStop(.5, 'rgba(255,255,255,0)'); topTint.addColorStop(1, 'rgba(0,0,0,.10)');
-    context.fillStyle = topTint; context.fillRect(130, 80, 640, 500);
+    context.save(); roundedRect(context, 51, 38, 798, 1275, 53); context.clip();
+    const sheen = context.createLinearGradient(48, 0, 854, 0);
+    sheen.addColorStop(0, 'rgba(255,255,255,.22)'); sheen.addColorStop(.05, 'rgba(255,255,255,.08)');
+    sheen.addColorStop(.23, 'rgba(255,255,255,.015)'); sheen.addColorStop(.78, 'rgba(255,255,255,0)'); sheen.addColorStop(.96, 'rgba(255,255,255,.18)'); sheen.addColorStop(1, 'rgba(80,48,20,.12)');
+    context.fillStyle = sheen; context.fillRect(48, 35, 806, 1280);
+    const topTint = context.createLinearGradient(0, 40, 0, 560);
+    topTint.addColorStop(0, 'rgba(255,255,255,.17)'); topTint.addColorStop(.45, 'rgba(255,255,255,.035)'); topTint.addColorStop(1, 'rgba(80,48,20,.11)');
+    context.fillStyle = topTint; context.fillRect(48, 35, 806, 520);
+    if (state.finish === 'classic') {
+      for (let i = 0; i < 308; i++) {
+        const y = 45 + i * 4.1;
+        const start = 55 + ((i * 53) % 155);
+        const length = 360 + ((i * 79) % 405);
+        context.beginPath(); context.moveTo(start, y); context.lineTo(Math.min(844, start + length), y + ((i % 5) - 2) * .16);
+        context.strokeStyle = i % 4 === 0 ? 'rgba(255,255,255,.16)' : i % 3 === 0 ? 'rgba(115,74,35,.11)' : 'rgba(255,246,220,.12)';
+        context.lineWidth = i % 7 === 0 ? 1.4 : .7; context.stroke();
+      }
+    }
     context.restore();
     context.save();
-    context.strokeStyle = 'rgba(255,255,255,.08)'; context.lineWidth = 2;
-    roundedRect(context, 131, 83, 638, 1294, 54); context.stroke();
-    context.strokeStyle = 'rgba(0,0,0,.82)'; context.lineWidth = 11; context.beginPath(); context.moveTo(125, 568); context.lineTo(775, 568); context.stroke();
-    context.strokeStyle = 'rgba(255,255,255,.25)'; context.lineWidth = 2; context.beginPath(); context.moveTo(133, 573); context.lineTo(767, 573); context.stroke();
-    context.strokeStyle = 'rgba(255,255,255,.15)'; context.lineWidth = 1; context.beginPath(); context.moveTo(137, 584); context.lineTo(763, 584); context.stroke();
-    const hingeX = face === 'front' ? 87 : 768;
+    context.strokeStyle = 'rgba(255,248,224,.75)'; context.lineWidth = 2;
+    roundedRect(context, 51, 38, 798, 1275, 53); context.stroke();
+    context.strokeStyle = 'rgba(47,31,16,.9)'; context.lineWidth = 5;
+    if (face === 'front') { context.beginPath(); context.moveTo(73, 112); context.quadraticCurveTo(74, 60, 128, 55); context.lineTo(774, 55); context.stroke(); context.beginPath(); context.moveTo(73, 112); context.lineTo(73, 1237); context.quadraticCurveTo(74, 1285, 119, 1287); context.stroke(); }
+    else { context.beginPath(); context.moveTo(127, 55); context.lineTo(774, 55); context.quadraticCurveTo(826, 60, 827, 112); context.stroke(); context.beginPath(); context.moveTo(827, 112); context.lineTo(827, 1237); context.quadraticCurveTo(826, 1285, 780, 1287); context.stroke(); }
+    context.strokeStyle = 'rgba(32,23,13,.95)'; context.lineWidth = 8; context.beginPath(); context.moveTo(47, 529); context.lineTo(853, 529); context.stroke();
+    context.strokeStyle = 'rgba(255,243,215,.72)'; context.lineWidth = 2; context.beginPath(); context.moveTo(50, 534); context.lineTo(850, 534); context.stroke();
+    context.strokeStyle = 'rgba(116,78,39,.45)'; context.lineWidth = 1; context.beginPath(); context.moveTo(55, 543); context.lineTo(845, 543); context.stroke();
+    const hingeX = face === 'front' ? 13 : 842;
     const hinge = context.createLinearGradient(hingeX, 0, hingeX + 45, 0);
-    hinge.addColorStop(0, '#3a4246'); hinge.addColorStop(.28, '#b4b9b8'); hinge.addColorStop(.55, '#60696c'); hinge.addColorStop(1, '#252d32');
-    roundedRect(context, hingeX, 542, 45, 50, 13); context.fillStyle = hinge; context.fill();
-    context.strokeStyle = 'rgba(16,21,25,.7)'; context.lineWidth = 2; roundedRect(context, hingeX + 8, 548, 25, 37, 9); context.stroke();
-    context.fillStyle = '#c1c4c1'; context.beginPath(); context.arc(hingeX + 21, 555, 3, 0, Math.PI * 2); context.fill();
-    context.beginPath(); context.arc(hingeX + 21, 578, 3, 0, Math.PI * 2); context.fill();
+    hinge.addColorStop(0, '#76542f'); hinge.addColorStop(.28, '#f1d59c'); hinge.addColorStop(.55, '#9e7543'); hinge.addColorStop(1, '#56391e');
+    roundedRect(context, hingeX, 503, 45, 52, 16); context.fillStyle = hinge; context.fill();
+    context.strokeStyle = 'rgba(56,39,22,.85)'; context.lineWidth = 2; roundedRect(context, hingeX + 8, 509, 26, 39, 11); context.stroke();
+    context.fillStyle = '#785a34'; context.beginPath(); context.arc(hingeX + 21, 517, 4, 0, Math.PI * 2); context.fill();
+    context.beginPath(); context.arc(hingeX + 21, 540, 4, 0, Math.PI * 2); context.fill();
     context.restore();
     if (withGuides) {
       context.save(); context.setLineDash([8, 8]); context.strokeStyle = 'rgba(255,255,255,.86)'; context.lineWidth = 2;
@@ -251,7 +264,7 @@
   function escapeHtml(value) {
     return String(value).replace(/[&<>"']/g, (character) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[character]));
   }
-  function iconSvg(key, color = '#e7e2d8') {
+  function iconSvg(key, color = '#34271b') {
     const forms = {
       heart: '<path d="M50 84 15 51C-4 28 13 7 32 14c8 3 13 9 18 16 6-8 12-13 20-16 20-7 37 14 18 37Z"/>',
       star: '<path d="m50 6 12 29 31 2-24 20 8 31-27-17-27 17 8-31L7 37l31-2z"/>',
@@ -272,20 +285,36 @@
   function renderPanel() {
     const body = document.querySelector('#editorBody');
     const title = document.querySelector('#panelTitle');
-    const tabTitles = { design:'Thiết kế', upload:'Tải ảnh', gallery:'Hình ảnh', text:'Chữ' };
-    title.textContent = tabTitles[state.tab];
+    const tabTitles = { design:'Thiết kế', upload:'Tải ảnh', gallery:'Hình ảnh', text:'Chữ', shapes:'Hình khối' };
+    title.textContent = tabTitles[state.tab] || 'Thiết kế';
     if (state.tab === 'design') renderDesignPanel(body);
     if (state.tab === 'upload') renderUploadPanel(body);
     if (state.tab === 'gallery') renderGalleryPanel(body);
     if (state.tab === 'text') renderTextPanel(body);
+    if (state.tab === 'shapes') renderShapesPanel(body);
     updateImageCount();
+  }
+  function addOptionsMarkup() {
+    const options = [
+      ['upload','↑','Tải ảnh'], ['gallery','▧','Hình ảnh'],
+      ['text','Tt','Chữ'], ['shapes','◇','Hình khối']
+    ];
+    const tiles = options.map(([key, icon, label]) => `<button class="add-option" data-add-option="${key}" type="button"><span class="add-option-icon">${icon}</span><span>${label}</span></button>`).join('');
+    return `<div class="add-control"><button class="add-menu-toggle" id="addMenuToggle" type="button" aria-label="Thêm thành phần thiết kế" aria-expanded="${state.addMenuOpen}" aria-controls="addOptions">+</button><div class="add-menu-rule"></div>${state.addMenuOpen ? `<div class="add-options-grid" id="addOptions">${tiles}</div>` : ''}</div>`;
+  }
+  function bindAddOptions(body) {
+    body.querySelector('#addMenuToggle')?.addEventListener('click', () => { state.addMenuOpen = !state.addMenuOpen; renderPanel(); });
+    body.querySelectorAll('[data-add-option]').forEach((button) => button.addEventListener('click', () => {
+      state.tab = button.dataset.addOption; state.addMenuOpen = false; renderAll();
+      if (state.tab === 'upload') document.querySelector('#imageInput')?.click();
+      if (state.tab === 'text') document.querySelector('#textInput')?.focus();
+    }));
   }
   function renderDesignPanel(body) {
     const items = activeItems();
     if (!items.length) {
-      body.innerHTML = `<div class="empty-state"><div class="empty-orbit" aria-hidden="true">✦</div><h3>Bắt đầu tạo dấu ấn riêng</h3><p>Thêm chữ hoặc hình ảnh vào vùng khắc để xem trước trên sản phẩm.</p><div class="inline-actions"><button class="small-primary" data-action="new-text" type="button">＋ Thêm chữ</button><button class="small-secondary" data-action="goto-gallery" type="button">Chọn hình</button></div></div><div class="tip-box"><strong>Mẹo:</strong> Kéo các thành phần trên sản phẩm để điều chỉnh vị trí.</div>`;
-      body.querySelector('[data-action="new-text"]').addEventListener('click', () => { state.tab = 'text'; renderAll(); body.querySelector('#textInput')?.focus(); });
-      body.querySelector('[data-action="goto-gallery"]').addEventListener('click', () => { state.tab = 'gallery'; renderAll(); });
+      body.innerHTML = `<div class="panel-section-title"><h3>Các thành phần thiết kế</h3></div><p class="panel-description">Chưa có thành phần nào trên mặt ${state.face === 'front' ? 'trước' : 'sau'}. Bấm + để thêm chữ, hình ảnh hoặc hình khối.</p>${addOptionsMarkup()}<div class="tip-box"><strong>Mẹo:</strong> Kéo thành phần trên sản phẩm để điều chỉnh vị trí.</div>`;
+      bindAddOptions(body);
       return;
     }
     const rows = items.map((item) => {
@@ -294,19 +323,16 @@
       return `<div class="layer-row ${item.id === state.selectedId ? 'is-selected' : ''}" data-select="${item.id}" role="button" tabindex="0"><span class="layer-thumb">${thumb}</span><span class="layer-name">${escapeHtml(label || 'Hình ảnh')}<small class="layer-kind">${item.type === 'text' ? 'Văn bản' : 'Hình ảnh'}</small></span><button class="layer-delete" data-delete="${item.id}" type="button" aria-label="Xóa ${escapeHtml(label || 'thành phần')}">×</button></div>`;
     }).join('');
     const finishButtons = Object.entries(FINISHES).map(([key, finish]) => `<button class="finish-chip ${state.finish === key ? 'is-current' : ''}" data-finish="${key}" type="button" title="${finish.label}" aria-label="${finish.label}" style="background:linear-gradient(110deg,${finish.left},${finish.mid},${finish.right)}"></button>`).join('');
-    body.innerHTML = `<div class="panel-section-title"><h3>Các thành phần thiết kế</h3><span>${items.length} thành phần</span></div><div class="layer-list">${rows}</div><div class="inline-actions"><button class="small-secondary" data-add="text" type="button">＋ Thêm chữ</button><button class="small-secondary" data-add="image" type="button">＋ Thêm hình</button></div><div class="finish-picker"><span class="section-label">Màu sản phẩm</span><div class="color-line">${finishButtons}<span class="finish-name">${FINISHES[state.finish].label}</span></div></div>${selectedItem() ? renderSelectedEditor(selectedItem()) : ''}`;
+    body.innerHTML = `<div class="panel-section-title"><h3>Các thành phần thiết kế</h3><span>${items.length} thành phần</span></div><div class="layer-list">${rows}</div>${addOptionsMarkup()}<div class="finish-picker"><span class="section-label">Màu sản phẩm</span><div class="color-line">${finishButtons}<span class="finish-name">${FINISHES[state.finish].label}</span></div></div>${selectedItem() ? renderSelectedEditor(selectedItem()) : ''}`;
     body.querySelectorAll('[data-select]').forEach((row) => {
       const choose = () => { state.selectedId = row.dataset.select; renderAll(); };
       row.addEventListener('click', (event) => { if (!event.target.closest('[data-delete]')) choose(); });
       row.addEventListener('keydown', (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); choose(); } });
     });
     body.querySelectorAll('[data-delete]').forEach((button) => button.addEventListener('click', (event) => { event.stopPropagation(); deleteItem(button.dataset.delete); }));
-    body.querySelector('[data-add="text"]').addEventListener('click', () => { state.tab = 'text'; renderAll(); body.querySelector('#textInput')?.focus(); });
-    body.querySelector('[data-add="image"]').addEventListener('click', () => { state.tab = 'upload'; renderAll(); });
     body.querySelectorAll('[data-finish]').forEach((button) => button.addEventListener('click', () => { pushHistory(); state.finish = button.dataset.finish; renderAll(); saveDraft(); }));
-    bindSelectedEditor(body);
-  }
-  function renderSelectedEditor(item) {
+    bindAddOptions(body); bindSelectedEditor(body);
+  }  function renderSelectedEditor(item) {
     if (item.type === 'text') {
       const colors = PALETTE.map((color) => `<button class="color-chip ${item.color === color ? 'is-current' : ''}" data-color="${color}" style="background:${color}" type="button" title="${color}" aria-label="Chọn màu ${color}"></button>`).join('');
       return `<div class="selected-editor"><div class="panel-section-title"><h3>Chỉnh sửa chữ</h3></div><label class="field-label">Nội dung<input id="editText" value="${escapeHtml(item.text)}" maxlength="80" /></label><div class="field-label"><span>Cỡ chữ</span><div class="range-line"><input id="editSize" type="range" min="34" max="126" value="${item.size || 72}" /><output>${item.size || 72}</output></div></div><div class="field-label"><span>Màu chữ</span><div class="color-line">${colors}</div></div></div>`;
@@ -358,8 +384,23 @@
     body.innerHTML = `<div class="gallery-panel"><h3>Chọn hình trang trí</h3><p class="panel-description">Thêm một biểu tượng đơn giản rồi tùy chỉnh kích thước và vị trí.</p><div class="gallery-grid">${gallery.map((item) => `<button class="gallery-card" data-symbol="${item.key}" type="button" aria-label="Thêm hình ${item.name}">${iconSvg(item.key)}</button>`).join('')}</div><div class="gallery-grid-labels">${gallery.map((item) => `<p class="gallery-name">${item.name}</p>`).join('')}</div><div class="tip-box">Hình trang trí được tạo dạng vector để giữ nét rõ khi phóng to.</div></div>`;
     body.querySelectorAll('[data-symbol]').forEach((button) => button.addEventListener('click', () => {
       const selected = gallery.find((item) => item.key === button.dataset.symbol);
-      const svg = iconSvg(selected.key, '#e8e2d7').replace('<svg ', '<svg xmlns="http://www.w3.org/2000/svg" ');
+      const svg = iconSvg(selected.key, '#34271b').replace('<svg ', '<svg xmlns="http://www.w3.org/2000/svg" ');
       addItem({ type:'image', name:selected.name, src:`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`, width:28, height:22 });
+    }));
+  }
+
+  const geometricShapes = [
+    { key:'circle', name:'Hình tròn', markup:'<circle cx="50" cy="50" r="35"/>' },
+    { key:'square', name:'Hình vuông', markup:'<rect x="16" y="16" width="68" height="68" rx="5"/>' },
+    { key:'diamond', name:'Hình thoi', markup:'<path d="M50 8 91 50 50 92 9 50Z"/>' },
+    { key:'triangle', name:'Tam giác', markup:'<path d="M50 9 94 88H6Z"/>' }
+  ];
+  function renderShapesPanel(body) {
+    body.innerHTML = `<div class="gallery-panel"><h3>Chọn hình khối</h3><p class="panel-description">Thêm hình cơ bản vào vùng khắc rồi kéo để đặt vị trí.</p><div class="shape-grid">${geometricShapes.map((shape) => `<button class="shape-card" data-shape="${shape.key}" type="button" aria-label="Thêm ${shape.name}"><svg viewBox="0 0 100 100" aria-hidden="true" fill="#34271b" stroke="#be9a65" stroke-width="2">${shape.markup}</svg></button>`).join('')}</div><div class="shape-labels">${geometricShapes.map((shape) => `<p class="shape-label">${shape.name}</p>`).join('')}</div></div>`;
+    body.querySelectorAll('[data-shape]').forEach((button) => button.addEventListener('click', () => {
+      const shape = geometricShapes.find((item) => item.key === button.dataset.shape);
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="#34271b">${shape.markup}</svg>`;
+      addItem({ type:'image', name:shape.name, src:`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`, width:24, height:20 });
     }));
   }
 
@@ -401,7 +442,7 @@
     clearTimeout(toastTimer); toastTimer = setTimeout(() => toast.classList.remove('show'), 2800);
   }
   function setFace(face) { state.face = face; state.selectedId = state.faces[face].length ? state.faces[face][state.faces[face].length - 1].id : null; renderAll(); }
-  function setTab(tab) { state.tab = tab; renderAll(); }
+  function setTab(tab) { state.tab = tab; state.addMenuOpen = false; renderAll(); }
 
   function ensureImages(face) {
     return Promise.all(state.faces[face].filter((item) => item.type === 'image').map((item) => new Promise((resolve) => {
@@ -464,7 +505,7 @@
     const button = document.querySelector('#submitFormButton'); const feedback = document.querySelector('#formFeedback');
     const formData = new FormData(form); const payload = {
       name:String(formData.get('name') || '').trim(), contact:String(formData.get('contact') || '').trim(),
-      note:String(formData.get('note') || '').trim(), product:'Classic Navy Matte',
+      note:String(formData.get('note') || '').trim(), product:'Classic',
       designs:{ front:(await exportFace('front')).dataUrl, back:(await exportFace('back')).dataUrl }
     };
     button.disabled = true; button.textContent = 'Đang gửi…'; feedback.classList.remove('is-success');
@@ -488,7 +529,7 @@
 
   (async () => {
     const saved = await readDraft();
-    if (saved?.faces?.front && saved?.faces?.back) { state.faces = saved.faces; state.finish = saved.finish || 'navy'; }
+    if (saved?.faces?.front && saved?.faces?.back) { state.faces = saved.faces; state.finish = saved.finish === 'navy' ? 'classic' : (saved.finish || 'classic'); }
     const allImages = [...state.faces.front, ...state.faces.back].filter((item) => item.type === 'image');
     allImages.forEach((item) => getImage(item.src));
     state.selectedId = activeItems().length ? activeItems()[activeItems().length - 1].id : null;

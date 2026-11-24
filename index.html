@@ -14,7 +14,7 @@
         <span class="brand-mark" aria-hidden="true"><span></span><span></span></span>
         <span class="brand-copy"><strong>khắc riêng</strong><small>DESIGN YOUR OWN</small></span>
       </a>
-      <div class="topbar-center"><span class="crumb-muted">Sản phẩm</span><span class="crumb-slash">/</span><strong>Classic Navy Matte</strong></div>
+      <div class="topbar-center"><span class="crumb-muted">Sản phẩm</span><span class="crumb-slash">/</span><strong>Classic</strong></div>
       <div class="topbar-actions"><span class="autosave"><i></i> Đã lưu trên thiết bị</span><button class="icon-button help-button" type="button" title="Hướng dẫn" aria-label="Hướng dẫn">?</button></div>
     </header>
     <main class="workspace">
@@ -24,7 +24,7 @@
           <div class="stage-tools" aria-label="Công cụ xem sản phẩm">
             <button class="stage-tool" id="undoButton" type="button" title="Hoàn tác" aria-label="Hoàn tác">↶</button><button class="stage-tool" id="redoButton" type="button" title="Làm lại" aria-label="Làm lại">↷</button><span class="tool-separator"></span><button class="stage-tool" id="zoomIn" type="button" title="Phóng to" aria-label="Phóng to">＋</button><button class="stage-tool" id="zoomOut" type="button" title="Thu nhỏ" aria-label="Thu nhỏ">−</button><button class="stage-tool reset-tool" id="resetDesign" type="button" title="Xóa thiết kế" aria-label="Xóa thiết kế">⟳</button>
           </div>
-          <div class="product-stage" id="productStage"><div class="stage-glow"></div><canvas id="productCanvas" width="900" height="1460" aria-label="Sản phẩm mẫu, kéo các thành phần để điều chỉnh vị trí"></canvas><div class="stage-caption"><span class="caption-sparkle">✦</span> Kéo thả thiết kế để di chuyển</div></div>
+          <div class="product-stage" id="productStage"><div class="stage-glow"></div><canvas id="productCanvas" width="900" height="1350" aria-label="Classic, kéo các thành phần để điều chỉnh vị trí"></canvas><div class="stage-caption"><span class="caption-sparkle">✦</span> Kéo thả thiết kế để di chuyển</div></div>
           <div class="stage-edge-control"><span class="edge-line"></span><span class="edge-label">MÔ PHỎNG SẢN PHẨM</span><span class="edge-line"></span></div>
         </div>
         <div class="stage-footer"><div class="face-picker" role="group" aria-label="Chọn mặt sản phẩm">
@@ -38,6 +38,7 @@
           <button class="rail-tab" data-tab="upload" type="button"><span class="rail-icon icon-upload" aria-hidden="true"></span><span>Tải ảnh</span></button>
           <button class="rail-tab" data-tab="gallery" type="button"><span class="rail-icon icon-picture" aria-hidden="true"></span><span>Hình ảnh</span></button>
           <button class="rail-tab" data-tab="text" type="button"><span class="rail-icon icon-type" aria-hidden="true">Tt</span><span>Chữ</span></button>
+          <button class="rail-tab" data-tab="shapes" type="button"><span class="rail-icon icon-shape" aria-hidden="true">◇</span><span>Hình khối</span></button>
         </nav>
         <div class="editor-card">
           <div class="editor-header"><div><p class="eyebrow">TÙY CHỈNH SẢN PHẨM</p><h2 id="panelTitle">Thiết kế</h2></div><button class="more-button" id="moreOptions" type="button" aria-label="Tùy chọn thêm">•••</button></div>
@@ -46,7 +47,7 @@
         </div>
       </section>
     </main>
-    <footer class="bottom-bar"><div class="product-summary"><span class="summary-swatch"></span><span><strong>Classic Navy Matte</strong><small>Sản phẩm khắc tùy chỉnh</small></span></div><div class="bottom-actions"><span class="price-label">Giá sản phẩm sẽ được xác nhận sau khi gửi thiết kế</span><button class="submit-button" id="openSubmit" type="button"><span class="submit-icon" aria-hidden="true">↗</span> Gửi thiết kế</button></div></footer>
+    <footer class="bottom-bar"><div class="product-summary"><span class="summary-swatch"></span><span><strong>Classic</strong><small>Sản phẩm khắc tùy chỉnh</small></span></div><div class="bottom-actions"><span class="price-label">Giá sản phẩm sẽ được xác nhận sau khi gửi thiết kế</span><button class="submit-button" id="openSubmit" type="button"><span class="submit-icon" aria-hidden="true">↗</span> Gửi thiết kế</button></div></footer>
     <div class="modal-backdrop" id="previewModal" hidden><section class="modal preview-modal" role="dialog" aria-modal="true" aria-labelledby="previewTitle"><div class="modal-heading"><div><p class="eyebrow">BẢN XEM TRƯỚC</p><h2 id="previewTitle">Thiết kế hai mặt</h2></div><button class="close-modal" data-close="previewModal" type="button" aria-label="Đóng">×</button></div><div class="preview-exports" id="previewExports"></div><div class="modal-actions"><button class="secondary-button" id="downloadDesign" type="button">Tải ảnh PNG</button><button class="submit-button" id="previewSubmit" type="button">Gửi thiết kế</button></div></section></div>
     <div class="modal-backdrop" id="submitModal" hidden><section class="modal submit-modal" role="dialog" aria-modal="true" aria-labelledby="submitTitle"><div class="modal-heading"><div><p class="eyebrow">HOÀN TẤT THIẾT KẾ</p><h2 id="submitTitle">Gửi yêu cầu của bạn</h2></div><button class="close-modal" data-close="submitModal" type="button" aria-label="Đóng">×</button></div><p class="modal-intro">Để lại thông tin liên hệ. Chúng tôi sẽ xem thiết kế và phản hồi bạn về khả năng khắc.</p><form id="submitForm" class="submit-form"><label>Họ và tên<input name="name" autocomplete="name" required placeholder="Tên của bạn" /></label><label>Email hoặc số điện thoại<input name="contact" autocomplete="email" required placeholder="Cách chúng tôi liên hệ với bạn" /></label><label>Lời nhắn <span class="optional">(không bắt buộc)</span><textarea name="note" rows="3" placeholder="Thông tin thêm về yêu cầu của bạn"></textarea></label><div class="submit-consent"><span class="consent-icon">✓</span><span>Bạn có thể xuất hai mặt thành ảnh PNG để gửi kèm yêu cầu.</span></div><button class="submit-button full-button" type="submit" id="submitFormButton">Gửi yêu cầu thiết kế</button><button class="secondary-button full-button" id="manualExport" type="button" hidden>Tải ảnh PNG hai mặt</button><p class="form-feedback" id="formFeedback" role="status" aria-live="polite"></p></form></section></div>
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
