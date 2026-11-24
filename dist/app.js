@@ -12,9 +12,23 @@
     black: { label: 'Đen matte', left: '#101418', mid: '#303a41', right: '#151c22', edge: '#050709' },
     silver: { label: 'Bạc xước', left: '#636c72', mid: '#d1d5d6', right: '#777f83', edge: '#343b40' }
   };
-  const PALETTE = ['#34271b', '#161616', '#fffaf0', '#963b32', '#344d60'];
+  const PALETTE = ['#111111', '#929292', '#ffffff', '#4598de', '#55bf61', '#f0d94a', '#f28c2e', '#e94132'];
+  const FONT_OPTIONS = [
+    ['Dancing Script', "'Dancing Script', cursive"], ['Great Vibes', "'Great Vibes', cursive"],
+    ['Pacifico', "'Pacifico', cursive"], ['Lobster', "'Lobster', cursive"],
+    ['Patrick Hand', "'Patrick Hand', cursive"], ['Playfair Display', "'Playfair Display', Georgia, serif"],
+    ['Roboto', "'Roboto', Arial, sans-serif"], ['Montserrat', "'Montserrat', Arial, sans-serif"],
+    ['Oswald', "'Oswald', Arial, sans-serif"], ['Anton', "'Anton', Impact, sans-serif"]
+  ];
+  const TEXT_ART = [
+    ['normal', 'Chữ thường'], ['outline', 'Viền nét'], ['shadow', 'Đổ bóng'],
+    ['spacing', 'Giãn rộng'], ['bold', 'Đậm nét'], ['italic', 'Nghiêng']
+  ];
   const state = {
     face: 'front', tab: 'design', finish: 'classic', zoom: 1, addMenuOpen: false,
+    textFont: 'Dancing Script', textEffect: 'normal', textColor: PALETTE[0],
+    textSize: 110, textSpacing: 0, textAlign: 'center', textBold: false,
+    textItalic: false, textUnderline: false,
     selectedId: null, dragging: null,
     faces: { front: [], back: [] },
     undo: [], redo: []
@@ -198,16 +212,18 @@
     image.onload = () => draw(); image.onerror = () => imageCache.delete(src); image.src = src;
     return image;
   }
+  function fontStack(name) { return FONT_OPTIONS.find(([font]) => font === name)?.[1] || "'DM Sans', Arial, sans-serif"; }
   function textMetrics(context, item) {
-    const size = item.size || 72;
-    const family = item.font === 'serif' ? 'Georgia, "Times New Roman", serif' : 'Arial, sans-serif';
-    context.save(); context.font = `${item.weight || 600} ${size}px ${family}`;
+    const size = item.size || state.textSize;
+    const weight = item.bold || item.effect === 'bold' ? 700 : 500;
+    const italic = item.italic || item.effect === 'italic' ? 'italic ' : '';
+    context.save(); context.font = `${italic}${weight} ${size}px ${fontStack(item.font || state.textFont)}`;
     const lines = String(item.text || '').split('\n');
-    const width = Math.min(SAFE.w * .92, Math.max(...lines.map((line) => context.measureText(line || ' ').width), size));
+    const spacing = Number(item.letterSpacing || 0) + (item.effect === 'spacing' ? 5 : 0);
+    const width = Math.min(SAFE.w * .92, Math.max(...lines.map((line) => context.measureText(line || ' ').width + Math.max(0, [...line].length - 1) * spacing), size));
     context.restore();
     return { width, height: Math.max(1, lines.length) * size * 1.34 };
-  }
-  function itemBounds(context, item) {
+  }  function itemBounds(context, item) {
     const centerX = SAFE.x + SAFE.w * item.x / 100;
     const centerY = SAFE.y + SAFE.h * item.y / 100;
     let width, height;
@@ -215,17 +231,46 @@
     else { width = SAFE.w * (item.width || 30) / 100; height = SAFE.h * (item.height || 20) / 100; }
     return { x: centerX - width / 2, y: centerY - height / 2, width, height, centerX, centerY };
   }
+  function drawTextLine(context, item, line, centerX, y, maxWidth, mode) {
+    const spacing = Number(item.letterSpacing || 0) + (item.effect === 'spacing' ? 5 : 0);
+    if (spacing <= 0) {
+      context[mode](line, centerX, y, maxWidth);
+      return;
+    }
+    const characters = [...line];
+    const widths = characters.map((character) => context.measureText(character).width);
+    const naturalWidth = widths.reduce((sum, width) => sum + width, 0) + Math.max(0, characters.length - 1) * spacing;
+    const scale = naturalWidth > maxWidth ? maxWidth / naturalWidth : 1;
+    const renderedWidth = naturalWidth * scale;
+    const align = item.align || 'center';
+    let cursor = align === 'left' ? centerX : align === 'right' ? centerX - renderedWidth : centerX - renderedWidth / 2;
+    context.save(); context.translate(cursor, y); context.scale(scale, 1); cursor = 0;
+    characters.forEach((character, index) => { context[mode](character, cursor, 0); cursor += widths[index] + spacing; });
+    context.restore();
+  }
   function drawItems(context, face, selected) {
     for (const item of state.faces[face]) {
       const box = itemBounds(context, item);
       if (item.type === 'text') {
-        const size = item.size || 72;
-        const family = item.font === 'serif' ? 'Georgia, "Times New Roman", serif' : 'Arial, sans-serif';
+        const size = item.size || state.textSize;
+        const weight = item.bold || item.effect === 'bold' ? 700 : 500;
+        const italic = item.italic || item.effect === 'italic' ? 'italic ' : '';
         const lines = String(item.text || '').split('\n');
-        context.save(); context.fillStyle = item.color || PALETTE[0]; context.textAlign = 'center'; context.textBaseline = 'middle';
-        context.font = `${item.weight || 600} ${size}px ${family}`; context.shadowColor = 'rgba(0,0,0,.17)'; context.shadowBlur = 4;
-        const lineHeight = size * 1.25; const start = box.centerY - ((lines.length - 1) * lineHeight) / 2;
-        lines.forEach((line, index) => context.fillText(line, box.centerX, start + index * lineHeight, SAFE.w * .91));
+        context.save(); context.fillStyle = item.color || PALETTE[0]; context.strokeStyle = item.color || PALETTE[0];
+        context.textAlign = 'left'; context.textBaseline = 'middle'; context.font = `${italic}${weight} ${size}px ${fontStack(item.font || state.textFont)}`;
+        if (item.effect === 'shadow') { context.shadowColor = 'rgba(0,0,0,.36)'; context.shadowBlur = size * .08; context.shadowOffsetY = size * .06; }
+        const lineHeight = size * 1.25; const startY = box.centerY - ((lines.length - 1) * lineHeight) / 2;
+        lines.forEach((line, index) => {
+          const y = startY + index * lineHeight;
+          if (item.effect === 'outline') { context.lineWidth = Math.max(2, size * .04); drawTextLine(context, item, line, box.centerX, y, SAFE.w * .91, 'strokeText'); }
+          else drawTextLine(context, item, line, box.centerX, y, SAFE.w * .91, 'fillText');
+          if (item.underline) {
+            const width = textMetrics(context, { ...item, text:line }).width;
+            const align = item.align || 'center';
+            const startX = align === 'left' ? box.centerX : align === 'right' ? box.centerX - width : box.centerX - width / 2;
+            context.beginPath(); context.lineWidth = Math.max(2, size * .025); context.moveTo(startX, y + size * .48); context.lineTo(startX + width, y + size * .48); context.stroke();
+          }
+        });
         context.restore();
       } else {
         const image = getImage(item.src);
@@ -246,8 +291,7 @@
         context.restore();
       }
     }
-  }
-  function draw(face = state.face, withGuides = true, selected = state.selectedId) {
+  }  function draw(face = state.face, withGuides = true, selected = state.selectedId) {
     productBase(ctx, face, withGuides);
     drawItems(ctx, face, withGuides ? selected : null);
   }
@@ -352,17 +396,83 @@
     if (opacity) opacity.addEventListener('input', () => { item.opacity = Number(opacity.value) / 100; opacity.nextElementSibling.value = `${opacity.value}%`; draw(); saveDraft(); });
   }
   function renderTextPanel(body) {
-    body.innerHTML = `<div class="text-panel"><h3>Thêm thông điệp</h3><p class="panel-description">Một cái tên, ngày kỷ niệm hay câu nói ngắn sẽ làm món quà thêm đặc biệt.</p><input id="textInput" class="text-entry" maxlength="80" placeholder="Nhập nội dung của bạn" aria-label="Nội dung chữ" /><button class="small-primary full-width" id="addTextButton" type="button">＋ Thêm chữ vào sản phẩm</button><span class="section-label">Kiểu chữ</span><div class="font-options"><button class="font-choice is-active" data-font="sans" type="button">Hiện đại</button><button class="font-choice serif" data-font="serif" type="button">Thanh lịch</button></div><div class="tip-box">Bạn có thể chọn chữ sau khi thêm để thay đổi cỡ và màu.</div></div>`;
-    const input = body.querySelector('#textInput');
-    const add = () => {
-      const text = input.value.trim(); if (!text) { input.focus(); return; }
-      addItem({ type:'text', text, size:72, font:body.querySelector('[data-font].is-active')?.dataset.font || 'sans', color:PALETTE[0], width:78 });
+    const selected = selectedItem();
+    let targetItem = selected?.type === 'text' ? selected : null;
+    const current = {
+      font:targetItem?.font || state.textFont, effect:targetItem?.effect || state.textEffect,
+      color:targetItem?.color || state.textColor, size:targetItem?.size || state.textSize,
+      letterSpacing:targetItem?.letterSpacing ?? state.textSpacing,
+      align:targetItem?.align || state.textAlign, bold:targetItem ? Boolean(targetItem.bold) : state.textBold,
+      italic:targetItem ? Boolean(targetItem.italic) : state.textItalic,
+      underline:targetItem ? Boolean(targetItem.underline) : state.textUnderline
     };
-    body.querySelector('#addTextButton').addEventListener('click', add);
-    input.addEventListener('keydown', (event) => { if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') add(); });
-    body.querySelectorAll('[data-font]').forEach((button) => button.addEventListener('click', () => { body.querySelectorAll('[data-font]').forEach((choice) => choice.classList.toggle('is-active', choice === button)); }));
-  }
-  function renderUploadPanel(body) {
+    const artButtons = TEXT_ART.map(([key, label]) => `<button class="text-art-option ${current.effect === key ? 'is-active' : ''}" data-effect="${key}" type="button" aria-pressed="${current.effect === key}"><span class="art-sample ${key}">TEXT ART</span></button>`).join('');
+    const fontButtons = FONT_OPTIONS.map(([font]) => `<button class="font-option ${current.font === font ? 'is-active' : ''}" data-font="${escapeHtml(font)}" type="button" style="font-family:${fontStack(font)}" aria-pressed="${current.font === font}">${escapeHtml(font)}</button>`).join('');
+    const colorButtons = PALETTE.map((color) => `<button class="text-color-chip ${current.color.toLowerCase() === color.toLowerCase() ? 'is-current' : ''}" data-text-color="${color}" style="--chip:${color}" type="button" aria-label="Chọn màu ${color}" aria-pressed="${current.color.toLowerCase() === color.toLowerCase()}"></button>`).join('');
+    body.innerHTML = `<div class="text-panel">
+      <textarea id="textInput" class="text-entry text-area" maxlength="120" placeholder="Nhập chữ của bạn" aria-label="Nhập chữ để khắc">${escapeHtml(targetItem?.text || '')}</textarea>
+      <div class="text-art-grid" role="group" aria-label="Kiểu chữ nghệ thuật">${artButtons}</div>
+      <div class="text-heading-row"><span>Phông chữ</span><span id="currentFontName">${escapeHtml(current.font)}</span></div>
+      <div class="font-list" id="fontList" role="listbox" aria-label="Chọn phông chữ">${fontButtons}</div>
+      <div class="text-setting-row format-row"><span>Kiểu</span><div class="format-buttons">
+        <button class="format-button ${current.bold ? 'is-active' : ''}" data-format="bold" type="button" aria-label="Đậm" aria-pressed="${current.bold}"><b>B</b></button>
+        <button class="format-button ${current.italic ? 'is-active' : ''}" data-format="italic" type="button" aria-label="Nghiêng" aria-pressed="${current.italic}"><i>I</i></button>
+        <button class="format-button ${current.underline ? 'is-active' : ''}" data-format="underline" type="button" aria-label="Gạch chân" aria-pressed="${current.underline}"><u>U</u></button>
+      </div></div>
+      <div class="text-setting-row color-row"><span>Màu</span><div class="text-color-controls"><div class="text-palette">${colorButtons}</div><label class="custom-color-wrap" title="Màu tùy chỉnh"><input id="customTextColor" type="color" value="${current.color}" aria-label="Chọn màu tùy chỉnh" /></label></div></div>
+      <div class="text-setting-row range-setting"><label for="textSize">Cỡ chữ</label><input id="textSize" type="range" min="24" max="150" value="${current.size}" /><output id="textSizeValue">${current.size}</output></div>
+      <div class="text-setting-row range-setting"><label for="textSpacing">Giãn chữ</label><input id="textSpacing" type="range" min="0" max="20" value="${current.letterSpacing}" /><output id="textSpacingValue">${current.letterSpacing}</output></div>
+      <div class="text-setting-row align-row"><span>Căn lề</span><div class="align-buttons">
+        <button class="align-button ${current.align === 'left' ? 'is-active' : ''}" data-align="left" type="button" aria-label="Căn trái" aria-pressed="${current.align === 'left'}">☰</button>
+        <button class="align-button ${current.align === 'center' ? 'is-active' : ''}" data-align="center" type="button" aria-label="Căn giữa" aria-pressed="${current.align === 'center'}">☰</button>
+        <button class="align-button ${current.align === 'right' ? 'is-active' : ''}" data-align="right" type="button" aria-label="Căn phải" aria-pressed="${current.align === 'right'}">☰</button>
+      </div></div>
+      <p class="text-live-note">Chữ hiển thị ngay trên sản phẩm. Kéo chữ trên khung xem trước để đổi vị trí.</p>
+    </div>`;
+    const input = body.querySelector('#textInput');
+    function createTextLayerIfNeeded() {
+      if (targetItem || !input.value.trim()) return;
+      pushHistory();
+      targetItem = { id:makeId(), type:'text', x:50, y:50, width:78, height:12, text:'', font:current.font, effect:current.effect, color:current.color, size:current.size, letterSpacing:current.letterSpacing, align:current.align, bold:current.bold, italic:current.italic, underline:current.underline };
+      activeItems().push(targetItem); state.selectedId = targetItem.id;
+    }
+    function applySetting(key, value) {
+      current[key] = value;
+      const stateKey = { font:'textFont', effect:'textEffect', color:'textColor', size:'textSize', letterSpacing:'textSpacing', align:'textAlign', bold:'textBold', italic:'textItalic', underline:'textUnderline' }[key];
+      if (stateKey) state[stateKey] = value;
+      createTextLayerIfNeeded();
+      if (targetItem) { targetItem[key] = value; targetItem.text = input.value; }
+      draw(); saveDraft();
+    }
+    input.addEventListener('input', () => { createTextLayerIfNeeded(); if (targetItem) targetItem.text = input.value; draw(); saveDraft(); });
+    body.querySelectorAll('[data-effect]').forEach((button) => button.addEventListener('click', () => {
+      applySetting('effect', button.dataset.effect);
+      body.querySelectorAll('[data-effect]').forEach((option) => { option.classList.toggle('is-active', option === button); option.setAttribute('aria-pressed', String(option === button)); });
+    }));
+    body.querySelectorAll('[data-font]').forEach((button) => button.addEventListener('click', () => {
+      applySetting('font', button.dataset.font); body.querySelector('#currentFontName').textContent = button.dataset.font;
+      body.querySelectorAll('[data-font]').forEach((option) => { option.classList.toggle('is-active', option === button); option.setAttribute('aria-pressed', String(option === button)); });
+    }));
+    body.querySelectorAll('[data-text-color]').forEach((button) => button.addEventListener('click', () => {
+      applySetting('color', button.dataset.textColor);
+      body.querySelectorAll('[data-text-color]').forEach((option) => { option.classList.toggle('is-current', option === button); option.setAttribute('aria-pressed', String(option === button)); });
+      body.querySelector('#customTextColor').value = button.dataset.textColor;
+    }));
+    body.querySelector('#customTextColor').addEventListener('input', (event) => {
+      applySetting('color', event.target.value);
+      body.querySelectorAll('[data-text-color]').forEach((option) => { option.classList.toggle('is-current', option.dataset.textColor.toLowerCase() === event.target.value.toLowerCase()); option.setAttribute('aria-pressed', String(option.dataset.textColor.toLowerCase() === event.target.value.toLowerCase())); });
+    });
+    body.querySelector('#textSize').addEventListener('input', (event) => { applySetting('size', Number(event.target.value)); body.querySelector('#textSizeValue').value = event.target.value; });
+    body.querySelector('#textSpacing').addEventListener('input', (event) => { applySetting('letterSpacing', Number(event.target.value)); body.querySelector('#textSpacingValue').value = event.target.value; });
+    body.querySelectorAll('[data-format]').forEach((button) => button.addEventListener('click', () => {
+      const key = button.dataset.format; applySetting(key, !current[key]);
+      button.classList.toggle('is-active', current[key]); button.setAttribute('aria-pressed', String(current[key]));
+    }));
+    body.querySelectorAll('[data-align]').forEach((button) => button.addEventListener('click', () => {
+      applySetting('align', button.dataset.align);
+      body.querySelectorAll('[data-align]').forEach((option) => { option.classList.toggle('is-active', option === button); option.setAttribute('aria-pressed', String(option === button)); });
+    }));
+  }  function renderUploadPanel(body) {
     body.innerHTML = `<div class="upload-panel"><h3>Tải hình ảnh của bạn</h3><p class="panel-description">Thêm logo, hình kỷ niệm hoặc nét vẽ riêng để tạo thiết kế độc đáo.</p><input id="imageInput" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" multiple hidden /><div class="dropzone" id="dropzone"><div class="upload-symbol" aria-hidden="true">↑</div><strong>Kéo thả hình ảnh vào đây</strong><span>PNG, JPG, WEBP hoặc SVG · tối đa 4 MB mỗi ảnh</span><button id="chooseImages" type="button">Chọn tệp từ thiết bị</button></div><div class="upload-tip">Dùng ảnh rõ nét, nền trong suốt sẽ cho kết quả khắc đẹp hơn. Tối đa 10 hình trên mỗi mặt sản phẩm.</div></div>`;
     const input = body.querySelector('#imageInput'); const zone = body.querySelector('#dropzone');
     body.querySelector('#chooseImages').addEventListener('click', () => input.click());
